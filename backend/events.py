@@ -67,15 +67,19 @@ def ingest(con: sqlite3.Connection) -> int:
                 if inserted:
                     runs.apply(con, event)
                     cwd = event.get("cwd")
+                    title = event.get("session_title")
                     con.execute(
-                        "INSERT INTO sessao (session_id, cwd, ultimo_evento, ultima_atualizacao) "
-                        "VALUES (?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET "
+                        "INSERT INTO sessao (session_id, cwd, ultimo_evento, ultima_atualizacao, titulo) "
+                        "VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET "
+                        "titulo = CASE WHEN excluded.titulo <> '' AND excluded.ultima_atualizacao >= "
+                        "sessao.ultima_atualizacao THEN excluded.titulo ELSE sessao.titulo END, "
                         "cwd = CASE WHEN excluded.ultima_atualizacao >= sessao.ultima_atualizacao "
                         "AND excluded.cwd <> '' THEN excluded.cwd ELSE sessao.cwd END, "
                         "ultimo_evento = CASE WHEN excluded.ultima_atualizacao >= sessao.ultima_atualizacao "
                         "THEN excluded.ultimo_evento ELSE sessao.ultimo_evento END, "
                         "ultima_atualizacao = MAX(sessao.ultima_atualizacao, excluded.ultima_atualizacao)",
-                        (sid, cwd if isinstance(cwd, str) else "", name, when),
+                        (sid, cwd if isinstance(cwd, str) else "", name, when,
+                         title.strip() if isinstance(title, str) else ""),
                     )
                 processed += int(inserted)
             offset = stream.tell()

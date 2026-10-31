@@ -41,7 +41,8 @@ def init_db() -> None:
                 session_id TEXT PRIMARY KEY,
                 cwd TEXT NOT NULL,
                 ultimo_evento TEXT NOT NULL,
-                ultima_atualizacao TEXT NOT NULL
+                ultima_atualizacao TEXT NOT NULL,
+                titulo TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS ingestao (
                 chave TEXT PRIMARY KEY,
@@ -69,3 +70,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_execucao_session ON execucao(session_id);
             CREATE INDEX IF NOT EXISTS idx_evento_session ON evento(session_id);
         """)
+        # Light migration: databases created before the chat title was captured.
+        if "titulo" not in {row["name"] for row in con.execute("PRAGMA table_info(sessao)")}:
+            con.execute("ALTER TABLE sessao ADD COLUMN titulo TEXT NOT NULL DEFAULT ''")

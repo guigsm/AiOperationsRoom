@@ -749,7 +749,7 @@
   const PERMANENCIA = { mesa: [24000, 55000], cafe: [9000, 20000], estar: [14000, 36000] };
   const PLACA_MAX = 99; // unidades: duas placas vizinhas nunca se encostam
   const ROTULOS = { principal: 'Claude principal', desconhecido: 'agente desconhecido' };
-  const rotulo = (tipo) => ROTULOS[tipo] || tipo || '?';
+  const rotulo = (tipo, e) => (e && e.rotulo) || ROTULOS[tipo] || tipo || '?'; // e.rotulo: cargo/OS do título do chat
   const esc = (v) =>
     String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const reduzido = () => raiz.matchMedia && raiz.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1074,7 +1074,7 @@
     cracha.innerHTML = `<rect class="cracha-fundo" x="-6.5" y="-5.5" width="13" height="11" rx="2"/>${glifoDe(e.tipo_agente)}`;
     placa.appendChild(cracha);
     const nome = svgEl('text', { x: -24, y: 10.5 }, 'nome');
-    nome.textContent = rotulo(e.tipo_agente);
+    nome.textContent = rotulo(e.tipo_agente, e);
     placa.appendChild(nome);
     el.appendChild(placa);
     el.appendChild(svgEl('text', { x: 0, y: 28, 'text-anchor': 'middle' }, 'tempo')).textContent = tempoDe(e);
@@ -1084,7 +1084,7 @@
       status: e.status, tipo: e.tipo_agente, pai: e.execucao_pai_id || null,
       x: 0, y: 0, vaga: null, rota: null, pose: null, dir: 'baixo', proxima: 0, sumindo: false,
     };
-    el.setAttribute('aria-label', `${rotulo(e.tipo_agente)}: ${e.status}`);
+    el.setAttribute('aria-label', `${rotulo(e.tipo_agente, e)}: ${e.status}`);
     sala.gente.appendChild(el);
     ajustarPlaca(ent);
 
@@ -1132,7 +1132,7 @@
     const classes = ['personagem', 'avatar', 'pessoa', e.status, `familia-${familiaDe(e.tipo_agente)}`];
     if (ent.rota) classes.push('andando');
     ent.el.setAttribute('class', classes.join(' '));
-    ent.el.setAttribute('aria-label', `${rotulo(e.tipo_agente)}: ${e.status}`);
+    ent.el.setAttribute('aria-label', `${rotulo(e.tipo_agente, e)}: ${e.status}`);
     ent.el.querySelector('.tempo').textContent = tempoDe(e);
     if (antes === e.status) return;
     // mudou de estado: decide logo para onde vai. Quem encerrou ou ficou

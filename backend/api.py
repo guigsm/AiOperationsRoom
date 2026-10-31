@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import sqlite3
 from contextlib import asynccontextmanager
 from collections.abc import Iterator
@@ -15,8 +16,10 @@ from pydantic import BaseModel
 from backend.config import FRONTEND
 from backend.db import connect, init_db
 from backend.events import ingest
+from backend import manifest as manifesto
 from backend import projects
 from backend import runs
+from backend import titulo as titulos
 from backend.reconcile import reconcile
 
 
@@ -44,9 +47,39 @@ def health() -> dict:
     return {"ok": True}
 
 
+def _scope(con: sqlite3.Connection):
+    """Rooms and the cwd resolver: from the manifest when there is one, else the manual mapping."""
+    found = manifesto.load()
+    if found:
+        return found, found["salas"], lambda cwd: manifesto.resolve(cwd, found)
+    mapped = projects.list_all(con)
+    return None, mapped, lambda cwd: projects.resolve(cwd, mapped)
+
+
+def _manual_only(deliver):
+    """Manual registration is disabled while a manifest drives the rooms."""
+    def guard(*args, **kwargs):
+        if manifesto.load():
+            raise HTTPException(status_code=409, detail="As salas vêm do manifesto da sede; o cadastro manual está desativado.")
+        return deliver(*args, **kwargs)
+    return functools.wraps(deliver)(guard)
+
+
+@app.get("/api/manifesto")
+def manifest_info() -> dict:
+    found = manifesto.load()
+    if not found:
+        return {"ativo": False}
+    return {"ativo": True, "origem": found.get("origem"), "frentes": found["frentes"]}
+
+
 @app.get("/api/projetos")
 def list_projects(con: sqlite3.Connection = Depends(database)) -> list[dict]:
-    return [projects.public(p) for p in projects.list_all(con)]
+    found, mapped, _ = _scope(con)
+    if found:
+        return [{key: room.get(key) for key in ("id", "nome", "sigla", "caminho_local", "arquivado", "frente", "frente_nome")}
+                for room in mapped]
+    return [projects.public(p) for p in mapped]
 
 
 def _save(con: sqlite3.Connection, data: ProjectInput, project_id: int | None = None) -> dict:
@@ -60,11 +93,13 @@ def _save(con: sqlite3.Connection, data: ProjectInput, project_id: int | None = 
 
 
 @app.post("/api/projetos", status_code=201)
+@_manual_only
 def create_project(data: ProjectInput, con: sqlite3.Connection = Depends(database)) -> dict:
     return _save(con, data)
 
 
 @app.put("/api/projetos/{project_id}")
+@_manual_only
 def update_project(project_id: int, data: ProjectInput,
                    con: sqlite3.Connection = Depends(database)) -> dict:
     if projects.get(con, project_id) is None:
@@ -73,11 +108,13 @@ def update_project(project_id: int, data: ProjectInput,
 
 
 @app.post("/api/projetos/{project_id}/arquivar")
+@_manual_only
 def archive_project(project_id: int, con: sqlite3.Connection = Depends(database)) -> dict:
     return _set_archive(con, project_id, True)
 
 
 @app.post("/api/projetos/{project_id}/desarquivar")
+@_manual_only
 def unarchive_project(project_id: int, con: sqlite3.Connection = Depends(database)) -> dict:
     return _set_archive(con, project_id, False)
 
@@ -93,6 +130,7 @@ def _set_archive(con: sqlite3.Connection, project_id: int, archived: bool) -> di
 
 
 @app.delete("/api/projetos/{project_id}")
+@_manual_only
 def delete_project(project_id: int, con: sqlite3.Connection = Depends(database)) -> dict:
     cursor = con.execute("DELETE FROM projeto WHERE id = ?", (project_id,))
     if cursor.rowcount == 0:
@@ -103,23 +141,25 @@ def delete_project(project_id: int, con: sqlite3.Connection = Depends(database))
 @app.get("/api/sessoes")
 def list_sessions(con: sqlite3.Connection = Depends(database)) -> dict:
     ingest(con)
-    mapped = projects.list_all(con)
+    found, _mapped, resolve = _scope(con)
+    siglas = _siglas(found)
     rows = con.execute(
-        "SELECT session_id, cwd, ultimo_evento, ultima_atualizacao "
+        "SELECT session_id, cwd, ultimo_evento, ultima_atualizacao, titulo "
         "FROM sessao WHERE cwd <> '' ORDER BY ultima_atualizacao DESC LIMIT 200"
     ).fetchall()
     sessions = []
     for row in rows:
         session = dict(row)
-        match = projects.resolve(session["cwd"], mapped)
+        session.update({key: value for key, value in titulos.parse(session["titulo"], siglas).items() if key != "projeto"})
+        match = resolve(session["cwd"])
         session["projeto_id"] = match["id"] if match else None
         session["projeto_nome"] = match["nome"] if match else None
         sessions.append(session)
     return {"sessoes": sessions}
 
 
-def _project_for(cwd: str, mapped: list[dict]) -> dict | None:
-    return projects.resolve(cwd, mapped)
+def _siglas(found: dict | None) -> dict[str, str]:
+    return {room["sigla"]: room["nome"] for room in (found["salas"] if found else []) if room.get("sigla")}
 
 
 @app.get("/api/painel")
@@ -128,7 +168,9 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
               con: sqlite3.Connection = Depends(database)) -> dict:
     ingest(con)
     reconcile(con)
-    mapped = projects.list_all(con)
+    found, _mapped, resolve = _scope(con)
+    siglas = _siglas(found)
+    chat_titles = {row["session_id"]: row["titulo"] for row in con.execute("SELECT session_id, titulo FROM sessao WHERE titulo <> ''")}
     now = datetime.now(timezone.utc)
     window = (now - timedelta(hours=horas)).isoformat(timespec="seconds")
     visible = (now - timedelta(hours=convivencia)).isoformat(timespec="seconds")
@@ -137,7 +179,12 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
         "OR julianday(criado_em) >= julianday(?) OR julianday(atualizado_em) >= julianday(?) "
         "ORDER BY atualizado_em DESC", (window, visible)
     ).fetchall()
-    items = [runs.public(row, _project_for(row["cwd"], mapped)) for row in rows]
+    items = [runs.public(row, resolve(row["cwd"])) for row in rows]
+    for item in items:
+        # Only the main chat carries the title; subagents keep the type the room already shows.
+        if item["pai_chave"] is None:
+            item["titulo"] = chat_titles.get(item["session_id"], "")
+            item.update(titulos.parse(item["titulo"], siglas))
     active = runs.ACTIVE
     summary_items = [item for item in items if item["estado"] in active or
                      _in_window(item["criado_em"], window) or _in_window(item["atualizado_em"], window)]

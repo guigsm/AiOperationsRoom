@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-FIELDS = ("hook_event_name", "session_id", "cwd", "agent_id", "agent_type", "reason")
+FIELDS = ("hook_event_name", "session_id", "cwd", "agent_id", "agent_type", "reason", "session_title")
 BACKGROUND_FIELDS = ("id", "type", "status", "agent_type")
 
 

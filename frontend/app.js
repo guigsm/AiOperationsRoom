@@ -7,6 +7,7 @@ let projects = [];
 let sessions = [];
 let dashboard = { execucoes: [], resumo: {} };
 let editingId = null;
+let manifest = { ativo: false };
 let selected = null;
 let viewMode = 'office';
 const visualRuns = new Map();
@@ -32,7 +33,7 @@ function officeData() {
   visualRuns.clear();
   for (const run of dashboard.execucoes) {
     const key = run.projeto_id ? `p${run.projeto_id}` : `c${String(run.cwd || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()}`;
-    const room = rooms.get(key) || { chave: key, nome: run.projeto_nome || 'Sem projeto', projeto_id: run.projeto_id, cwd: run.cwd, ativos: 0, execucoes: [] };
+    const room = rooms.get(key) || { chave: key, nome: run.projeto_nome || 'Sem projeto', projeto_id: run.projeto_id, frente: run.frente, cwd: run.cwd, ativos: 0, execucoes: [] };
     const id = visualId(run.chave);
     visualRuns.set(String(id), run);
     room.execucoes.push({
@@ -40,6 +41,7 @@ function officeData() {
       session_id: run.session_id,
       agent_id: run.agent_id,
       tipo_agente: run.agent_id ? run.tipo : 'principal',
+      rotulo: run.agent_id ? null : run.rotulo,
       status: run.estado,
       execucao_pai_id: run.pai_chave ? visualId(run.pai_chave) : null,
       duracao_segundos: Math.max(0, Math.floor((Date.now() - Date.parse(run.criado_em)) / 1000)),
@@ -64,7 +66,7 @@ function renderRoom() {
   const room = $('#office-room');
   if (viewMode === 'panel') {
     if (window.EscritorioPixel?.montado()) window.EscritorioPixel.destruir();
-    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td>${esc(run.tipo)}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="4">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
+    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td>${esc(run.rotulo || run.tipo)}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="4">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
     return;
   }
   const data = officeData();
@@ -82,7 +84,7 @@ async function selectSession(sessionId) {
   renderRoom();
   const [agents, history] = await Promise.all([request('GET', `/sessoes/${encodeURIComponent(sessionId)}/agentes`), request('GET', `/sessoes/${encodeURIComponent(sessionId)}/historico`)]);
   const main = agents.agentes.find((agent) => !agent.pai_chave);
-  $('#details').innerHTML = `<h2>${esc(main?.tipo || 'Sessão')}</h2><p class="status">${esc(states[main?.estado] || '')}</p><p class="detail-path">${esc(main?.cwd || '')}</p><h3>Agentes</h3><ul class="agent-list">${agents.agentes.map((agent) => `<li><span>${esc(agent.tipo)}</span><small>${esc(states[agent.estado])}</small></li>`).join('') || '<li>Nenhum agente registrado.</li>'}</ul><h3>Histórico</h3><ol class="history">${history.eventos.map((event) => `<li><span>${esc(event.nome)}</span><time>${esc(new Date(event.ocorrido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}</time></li>`).join('') || '<li>Sem eventos.</li>'}</ol>`;
+  $('#details').innerHTML = `<h2>${esc(dashboard.execucoes.find((run) => run.session_id === sessionId && !run.pai_chave)?.rotulo || main?.tipo || 'Sessão')}</h2><p class="status">${esc(states[main?.estado] || '')}</p><p class="detail-path">${esc(main?.cwd || '')}</p><h3>Agentes</h3><ul class="agent-list">${agents.agentes.map((agent) => `<li><span>${esc(agent.tipo)}</span><small>${esc(states[agent.estado])}</small></li>`).join('') || '<li>Nenhum agente registrado.</li>'}</ul><h3>Histórico</h3><ol class="history">${history.eventos.map((event) => `<li><span>${esc(event.nome)}</span><time>${esc(new Date(event.ocorrido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}</time></li>`).join('') || '<li>Sem eventos.</li>'}</ol>`;
   $('#details-modal').innerHTML = $('#details').innerHTML;
   $('#details-dialog').showModal();
 }
@@ -90,14 +92,15 @@ async function selectSession(sessionId) {
 function renderProjects() {
   const unknown = new Map();
   for (const session of sessions) if (session.projeto_id === null) { const item = unknown.get(session.cwd) || { cwd: session.cwd, count: 0 }; item.count += 1; unknown.set(session.cwd, item); }
+  $('#new-project').hidden = manifest.ativo;
   $('#unmapped-count').textContent = unknown.size;
-  $('#unmapped-list').innerHTML = unknown.size ? [...unknown.values()].map((entry) => `<div class="row"><div class="row-main"><strong class="path">${esc(entry.cwd)}</strong><small>${entry.count} sessão(ões)</small></div><div class="actions"><button data-action="create" data-path="${esc(entry.cwd)}">Criar projeto</button><button data-action="map" data-path="${esc(entry.cwd)}">Mapear existente</button></div></div>`).join('') : '<p class="empty">Nenhum caminho sem projeto.</p>';
+  $('#unmapped-list').innerHTML = unknown.size ? [...unknown.values()].map((entry) => `<div class="row"><div class="row-main"><strong class="path">${esc(entry.cwd)}</strong><small>${entry.count} sessão(ões)</small></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="create" data-path="${esc(entry.cwd)}">Criar projeto</button><button data-action="map" data-path="${esc(entry.cwd)}">Mapear existente</button></div></div>`).join('') : '<p class="empty">Nenhum caminho sem projeto.</p>';
   const visible = projects.filter((project) => !project.arquivado || $('#show-archived').checked);
   $('#project-count').textContent = projects.length;
-  $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions"><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
+  $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
 }
 
-async function refresh() { try { [projects, { sessoes: sessions }, dashboard] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`)]); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true); } }
+async function refresh() { try { [projects, { sessoes: sessions }, dashboard, manifest] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto')]); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true); } }
 document.addEventListener('click', (event) => { const button = event.target.closest('[data-view]'); if (!button) return; if (button.dataset.view === 'projects') window.location.assign('/projetos'); });
 $('#new-project').addEventListener('click', () => openProject());
 $('#show-archived').addEventListener('change', renderProjects);

@@ -108,4 +108,5 @@ def public(row: sqlite3.Row, project: dict | None) -> dict:
     item = dict(row)
     item["projeto_id"] = project["id"] if project else None
     item["projeto_nome"] = project["nome"] if project else None
+    item["frente"] = project.get("frente") if project else None
     return item

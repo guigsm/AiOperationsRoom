@@ -3,6 +3,7 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':
 let projects = [];
 let sessions = [];
 let editingId = null;
+let manifest = { ativo: false };
 
 async function request(method, path, body) {
   const response = await fetch('/api' + path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -17,14 +18,15 @@ function openProject(project = null, path = '') { editingId = project?.id ?? nul
 function render() {
   const unknown = new Map();
   for (const session of sessions) if (session.projeto_id === null) { const entry = unknown.get(session.cwd) || { cwd: session.cwd, count: 0 }; entry.count += 1; unknown.set(session.cwd, entry); }
+  $('#new-project').hidden = manifest.ativo;
   $('#unmapped-count').textContent = unknown.size;
-  $('#unmapped-list').innerHTML = unknown.size ? [...unknown.values()].map((entry) => `<div class="row"><div class="row-main"><strong class="path">${esc(entry.cwd)}</strong><small>${entry.count} sessão(ões)</small></div><div class="actions"><button data-action="create" data-path="${esc(entry.cwd)}">Criar projeto</button><button data-action="map" data-path="${esc(entry.cwd)}">Mapear existente</button></div></div>`).join('') : '<p class="empty">Nenhum caminho sem projeto.</p>';
+  $('#unmapped-list').innerHTML = unknown.size ? [...unknown.values()].map((entry) => `<div class="row"><div class="row-main"><strong class="path">${esc(entry.cwd)}</strong><small>${entry.count} sessão(ões)</small></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="create" data-path="${esc(entry.cwd)}">Criar projeto</button><button data-action="map" data-path="${esc(entry.cwd)}">Mapear existente</button></div></div>`).join('') : '<p class="empty">Nenhum caminho sem projeto.</p>';
   const visible = projects.filter((project) => !project.arquivado || $('#show-archived').checked);
   $('#project-count').textContent = projects.length;
-  $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions"><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
+  $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
 }
 
-async function refresh() { try { [projects, { sessoes: sessions }] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes')]); render(); } catch (error) { notice(error.message, true); } }
+async function refresh() { try { [projects, { sessoes: sessions }, manifest] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', '/manifesto')]); render(); } catch (error) { notice(error.message, true); } }
 $('#new-project').addEventListener('click', () => openProject());
 $('#show-archived').addEventListener('change', render);
 $('#cancel-dialog').addEventListener('click', () => $('#project-dialog').close());
