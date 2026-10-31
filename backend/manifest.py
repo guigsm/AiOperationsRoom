@@ -61,6 +61,7 @@ def parse(data: dict, root: Path) -> dict | None:
     for key, front in (raw_fronts.items() if isinstance(raw_fronts, dict) else []):
         if isinstance(front, dict):
             fronts[str(key)] = {"chave": str(key), "nome": _text(front.get("nome")) or str(key),
+                                "descricao": _text(front.get("descricao")),
                                 "membros": [str(m) for m in front.get("membros") or []]}
     front_of = {member.casefold(): front for front in fronts.values() for member in front["membros"]}
     rooms = [{"id": "sede", "nome": "Sede", "sigla": "DIR", "caminho_local": str(root)}]
@@ -80,7 +81,8 @@ def parse(data: dict, root: Path) -> dict | None:
         front = front_of.get(room["id"].casefold())
         result.append({**room, "caminho_key": key, "arquivado": 0, "criado_em": "", "atualizado_em": "",
                        "frente": front["chave"] if front else None,
-                       "frente_nome": front["nome"] if front else None})
+                       "frente_nome": front["nome"] if front else None,
+                       "frente_descricao": front["descricao"] if front else None})
     if len(result) < 2:
         return None
     return {"salas": result, "frentes": list(fronts.values()), "raiz": str(root)}

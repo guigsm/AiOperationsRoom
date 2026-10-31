@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 
 
 ACTIVE = {"trabalhando", "delegando", "aguardando"}
+IDLE = "ocioso"  # processo do chat sumiu sem SessionEnd e o último evento é recente
 
 
 def key_for(event: dict) -> str:
@@ -109,4 +111,18 @@ def public(row: sqlite3.Row, project: dict | None) -> dict:
     item["projeto_id"] = project["id"] if project else None
     item["projeto_nome"] = project["nome"] if project else None
     item["frente"] = project.get("frente") if project else None
+    item["frente_nome"] = project.get("frente_nome") if project else None
+    item["frente_descricao"] = project.get("frente_descricao") if project else None
+    item["ocioso_segundos"] = idle_seconds(item["atualizado_em"]) if item["estado"] == IDLE else None
     return item
+
+
+def idle_seconds(last_event: str, now: datetime | None = None) -> int | None:
+    """Segundos desde o último evento (número; a formatação é do frontend)."""
+    try:
+        last = datetime.fromisoformat(last_event.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return max(0, int(((now or datetime.now(timezone.utc)) - last).total_seconds()))

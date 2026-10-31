@@ -63,17 +63,63 @@ def living_sessions() -> dict[str, bool]:
     return found
 
 
+SILENCIO_ORFA_HORAS = 24  # além disso, sem sinal, a sessão deixa de ser "ociosa" e vira órfã
+SILENCIO_ORFA_ENV = "AI_OPERATIONS_ROOM_ORPHAN_HOURS"
+EVENTO_RECENTE = timedelta(seconds=60)  # evento tão novo que o registro do processo ainda não é confiável
+SESSAO_DESCONHECIDA = timedelta(minutes=10)  # sem registro local do processo: espera antes de dar por parada
+ATIVOS = ("trabalhando", "delegando", "aguardando")
+
+
+def silencio_orfa() -> timedelta:
+    """Silêncio que faz uma sessão parada virar órfã: 24 h, ou o valor (em horas) da variável de ambiente."""
+    try:
+        horas = float(os.environ.get(SILENCIO_ORFA_ENV, ""))
+    except ValueError:
+        horas = SILENCIO_ORFA_HORAS
+    return timedelta(hours=horas if horas > 0 else SILENCIO_ORFA_HORAS)
+
+
+def classificar(vivo: bool | None, ultimo_evento: datetime, session_end_sem_par: bool,
+                agora: datetime, silencio: timedelta | None = None) -> str:
+    """'ativo', 'ocioso' ou 'orfa' para uma sessão com execução aberta.
+
+    vivo: processo do chat vivo (True), sumido (False) ou sem registro local (None).
+    Órfã só com SessionEnd sem par ou com silêncio maior que o limite; o app do Claude
+    encerra o processo de um chat parado e o religa ao abri-lo, então processo sumido
+    sozinho é ocioso. Processo vivo é sempre ativo.
+    """
+    if vivo:
+        return "ativo"
+    parado = agora - ultimo_evento
+    if session_end_sem_par or parado > (silencio or silencio_orfa()):
+        return "orfa"
+    if parado < EVENTO_RECENTE:
+        return "ativo"
+    if vivo is False or parado > SESSAO_DESCONHECIDA:
+        return "ocioso"
+    return "ativo"
+
+
+def _session_end_sem_par(con: sqlite3.Connection, session_id: str, ultimo: str) -> bool:
+    """SessionEnd sem o resto do ciclo (sem SessionStart) ou que não fechou a execução ainda aberta."""
+    return con.execute(
+        "SELECT 1 FROM evento e WHERE e.session_id = ? AND e.nome = 'SessionEnd' AND ("
+        "NOT EXISTS (SELECT 1 FROM evento s WHERE s.session_id = e.session_id AND s.nome = 'SessionStart') "
+        "OR julianday(e.ocorrido_em) >= julianday(?)) LIMIT 1", (session_id, ultimo)
+    ).fetchone() is not None
+
+
 def reconcile(con: sqlite3.Connection, *, living: dict[str, bool] | None = None,
               now: datetime | None = None) -> int:
-    """Close all active runs in a dead session; unknown sessions expire after ten minutes."""
+    """Marca como ociosa (ou órfã, pelas regras de `classificar`) a sessão cujo processo sumiu."""
     living = living_sessions() if living is None else living
     now = now or datetime.now(timezone.utc)
-    cutoff = now - timedelta(minutes=10)
     demo_mode = (data_dir() / ".demo-mode").exists()
     rows = con.execute(
-        "SELECT session_id, MAX(atualizado_em) AS ultimo FROM execucao GROUP BY session_id"
+        "SELECT session_id, MAX(atualizado_em) AS ultimo FROM execucao "
+        "WHERE estado IN ('trabalhando', 'delegando', 'aguardando', 'ocioso') GROUP BY session_id"
     ).fetchall()
-    dead = []
+    idle, orphan = [], []
     for row in rows:
         if demo_mode and row["session_id"].startswith("demo-"):
             continue
@@ -84,14 +130,30 @@ def reconcile(con: sqlite3.Connection, *, living: dict[str, bool] | None = None,
                 last_dt = last_dt.replace(tzinfo=timezone.utc)
         except (AttributeError, ValueError):
             continue
-        status = living.get(row["session_id"])
-        if status is False or (status is None and last_dt < cutoff):
-            dead.append(row["session_id"])
+        verdict = classificar(living.get(row["session_id"]), last_dt,
+                              _session_end_sem_par(con, row["session_id"], last), now)
+        if verdict == "orfa":
+            orphan.append(row["session_id"])
+        elif verdict == "ocioso":
+            idle.append(row["session_id"])
     count = 0
-    for sid in dead:
+    stamp = now.isoformat(timespec="seconds")
+    for sid in orphan:
         count += con.execute(
             "UPDATE execucao SET estado = 'orfa', origem_encerramento = 'pid_morto', atualizado_em = ? "
-            "WHERE session_id = ? AND estado IN ('trabalhando', 'delegando', 'aguardando')",
-            (now.isoformat(timespec="seconds"), sid),
+            "WHERE session_id = ? AND estado IN ('trabalhando', 'delegando', 'aguardando', 'ocioso')",
+            (stamp, sid),
+        ).rowcount
+    for sid in idle:
+        # atualizado_em fica no último evento: é dele que se conta o "ocioso há X".
+        count += con.execute(
+            "UPDATE execucao SET estado = 'ocioso' WHERE session_id = ? AND pai_chave IS NULL "
+            "AND estado IN ('trabalhando', 'delegando', 'aguardando')", (sid,)
+        ).rowcount
+        # sem processo não há subagente em curso: o que ficou aberto foi interrompido.
+        count += con.execute(
+            "UPDATE execucao SET estado = 'concluida', origem_encerramento = 'interrompida' "
+            "WHERE session_id = ? AND pai_chave IS NOT NULL "
+            "AND estado IN ('trabalhando', 'delegando', 'aguardando')", (sid,)
         ).rowcount
     return count

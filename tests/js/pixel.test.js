@@ -211,3 +211,34 @@ test('nove execuções ativas dimensionam a sala com mesas suficientes', () => {
   const plano = px.planejarSala({ ativos: sala.ativos, total: sala.execucoes.length }, LARGURA);
   assert.ok(plano.vagas.filter((vaga) => vaga.zona === 'mesa').length >= 9);
 });
+
+/* ------------------------------------------------- blocos por frente (SAL-03) */
+
+const FRENTES = [
+  { chave: 'producao', nome: 'Estúdio', descricao: 'imagem, vídeo e 3D' },
+  { chave: 'operacao', nome: 'Operação', descricao: '' },
+];
+const sala = (nome, extra = {}) => ({ chave: nome, nome, projeto_id: nome, execucoes: [{ id: 1, status: 'aguardando' }], ...extra });
+
+test('sem manifesto não há blocos', () => {
+  const blocos = px.agruparPorFrente([sala('a'), sala('b')], []);
+  assert.equal(blocos.length, 1);
+  assert.equal(blocos[0].chave, null);
+  assert.equal(blocos[0].salas.length, 2);
+});
+
+test('com manifesto: Sede, frentes na ordem do manifesto, Clientes e fora do manifesto', () => {
+  const blocos = px.agruparPorFrente([
+    sala('coreograf'), sala('localhost', { frente: 'operacao' }), sala('Sede', { projeto_id: 'sede' }),
+    sala('estudio', { frente: 'producao' }), sala('solta', { projeto_id: null }),
+  ], FRENTES);
+  assert.deepEqual(blocos.map((b) => b.nome), ['Sede', 'Estúdio', 'Operação', 'Clientes', 'Fora do manifesto']);
+  assert.equal(blocos[1].descricao, 'imagem, vídeo e 3D');
+  assert.deepEqual(blocos[3].salas.map((s) => s.nome), ['coreograf']);
+});
+
+test('frente sem sala não aparece; ocioso fica em área de repouso', () => {
+  const blocos = px.agruparPorFrente([sala('localhost', { frente: 'operacao' })], FRENTES);
+  assert.deepEqual(blocos.map((b) => b.nome), ['Operação']);
+  assert.deepEqual(Object.keys(px.PESOS.ocioso).sort(), ['cafe', 'estar']);
+});

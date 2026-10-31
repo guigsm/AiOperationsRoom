@@ -115,7 +115,7 @@ def test_window_ghost_and_active_session_count(monkeypatch, tmp_path):
         assert client.get("/api/painel?horas=0").status_code == 422
 
 
-def test_reconcile_dead_pid_and_stale_unknown_session(monkeypatch, tmp_path):
+def test_reconcile_dead_pid_is_idle_and_stale_unknown_session(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_OPERATIONS_ROOM_DATA_DIR", str(tmp_path))
     add_events(
         {"id": "a", "evento": "SessionStart", "session_id": "dead", "cwd": "/work", "t": at(-1)},
@@ -127,7 +127,7 @@ def test_reconcile_dead_pid_and_stale_unknown_session(monkeypatch, tmp_path):
         with connect() as con:
             assert reconcile(con, living={"dead": False, "alive": True}, now=datetime.now(timezone.utc)) == 2
         agents = client.get("/api/sessoes/dead/agentes").json()["agentes"]
-        assert agents[0]["estado"] == "orfa"
+        assert agents[0]["estado"] == "ocioso"
         assert client.get("/api/sessoes/alive/agentes").json()["agentes"][0]["estado"] == "aguardando"
 
 

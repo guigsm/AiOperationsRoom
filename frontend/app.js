@@ -2,7 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[char]));
-const states = { trabalhando: 'Trabalhando', delegando: 'Delegando', aguardando: 'Aguardando', concluida: 'Concluída', orfa: 'Órfã' };
+const states = { trabalhando: 'Trabalhando', delegando: 'Delegando', aguardando: 'Aguardando', ocioso: 'Ocioso', concluida: 'Concluída', orfa: 'Órfã' };
 let projects = [];
 let sessions = [];
 let dashboard = { execucoes: [], resumo: {} };
@@ -33,7 +33,7 @@ function officeData() {
   visualRuns.clear();
   for (const run of dashboard.execucoes) {
     const key = run.projeto_id ? `p${run.projeto_id}` : `c${String(run.cwd || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()}`;
-    const room = rooms.get(key) || { chave: key, nome: run.projeto_nome || 'Sem projeto', projeto_id: run.projeto_id, frente: run.frente, cwd: run.cwd, ativos: 0, execucoes: [] };
+    const room = rooms.get(key) || { chave: key, nome: run.projeto_nome || 'Sem projeto', projeto_id: run.projeto_id, frente: run.frente, frente_nome: run.frente_nome, cwd: run.cwd, ativos: 0, execucoes: [] };
     const id = visualId(run.chave);
     visualRuns.set(String(id), run);
     room.execucoes.push({
@@ -45,12 +45,13 @@ function officeData() {
       status: run.estado,
       execucao_pai_id: run.pai_chave ? visualId(run.pai_chave) : null,
       duracao_segundos: Math.max(0, Math.floor((Date.now() - Date.parse(run.criado_em)) / 1000)),
+      ocioso_segundos: run.ocioso_segundos,
       desde_segundos: Math.max(0, Math.floor((Date.now() - Date.parse(run.atualizado_em)) / 1000)),
     });
     if (['trabalhando', 'delegando', 'aguardando'].includes(run.estado)) room.ativos += 1;
     rooms.set(key, room);
   }
-  return { salas: [...rooms.values()] };
+  return { salas: [...rooms.values()], frentes: manifest.ativo ? (dashboard.frentes || []) : [] };
 }
 
 function renderRoom() {

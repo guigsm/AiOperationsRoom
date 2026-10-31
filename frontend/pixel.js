@@ -453,6 +453,7 @@
     aguardando: { mesa: 0.3, cafe: 0.3, estar: 0.4 },
     concluida: { cafe: 0.4, estar: 0.6 },
     orfa: { cafe: 0.3, estar: 0.7 },
+    ocioso: { cafe: 0.4, estar: 0.6 },
   };
   /* Vitrine, opt-in com `foco=mesa` na URL (a cena showcase, para gravar
      vídeo): quem trabalha ou delega só escolhe mesa, para o quadro nunca
@@ -497,6 +498,7 @@
         nome: s.nome,
         projeto_id: s.projeto_id,
         cwd: s.cwd,
+        frente: s.frente,
         execucoes: s.execucoes,
         ativos: Number.isInteger(s.ativos) ? s.ativos : s.execucoes.filter((e) => ATIVOS.includes(e.status)).length,
       }));
@@ -505,6 +507,28 @@
       return a.nome.localeCompare(b.nome, 'pt-BR');
     });
     return salas;
+  }
+
+  /* Blocos por frente da Suíte. `frentes` vem do manifesto (ordem e nomes);
+     sem manifesto não há frentes e a cena fica sem blocos, como sempre foi.
+     Com manifesto: a Sede abre, depois cada frente que tem sala, depois as
+     Tocas sem frente ("Clientes": clientes e sites) e, por fim, o que não
+     foi achado no manifesto. Dentro do bloco vale a ordem de prepararSalas. */
+  function agruparPorFrente(salas, frentes) {
+    if (!frentes || !frentes.length) return [{ chave: null, nome: null, descricao: '', salas }];
+    const blocos = [
+      { chave: '_sede', nome: 'Sede', descricao: '', salas: [] },
+      ...frentes.map((f) => ({ chave: f.chave, nome: f.nome, descricao: f.descricao || '', salas: [] })),
+      { chave: '_clientes', nome: 'Clientes', descricao: 'clientes e sites', salas: [] },
+      { chave: '_fora', nome: 'Fora do manifesto', descricao: '', salas: [] },
+    ];
+    const destino = (sala) => {
+      if (sala.frente) return blocos.find((b) => b.chave === sala.frente) || blocos[blocos.length - 2];
+      if (sala.projeto_id === 'sede') return blocos[0];
+      return sala.projeto_id ? blocos[blocos.length - 2] : blocos[blocos.length - 1];
+    };
+    salas.forEach((sala) => destino(sala).salas.push(sala));
+    return blocos.filter((b) => b.salas.length);
   }
 
   /* -------------------------------------------------------- pintura */
@@ -737,14 +761,14 @@
   const logica = {
     P, SW, SH, POSES, ESTILOS, CABECAS, COR_FIXA, CLASSE_VAR, PESOS, X,
     mapaPessoa, aparencia, compilar, planejarSala, criarGrade, rota, sortearZona, escolherVaga,
-    prepararSalas, pintarSala, hash,
+    prepararSalas, agruparPorFrente, pintarSala, hash,
     definirFocoMesa: (ligado) => { focoMesa = Boolean(ligado); },
   };
 
   /* ---------------------------------------------------------------- DOM */
 
   const NS = 'http://www.w3.org/2000/svg';
-  const CENA = { largura: 1000, margem: 16 };
+  const CENA = { largura: 1000, margem: 16, cabecalho: 34 };
   const VELOCIDADE = 26; // pixels de arte por segundo
   const PERMANENCIA = { mesa: [24000, 55000], cafe: [9000, 20000], estar: [14000, 36000] };
   const PLACA_MAX = 99; // unidades: duas placas vizinhas nunca se encostam
@@ -783,6 +807,7 @@
   let camadaSalas = null;
   let camadaLinks = null;
   let camadaRota = null;
+  let camadaBlocos = null;
   let obterHistorico = () => ({});
   let trajetoLigado = () => false;
   const salas = new Map();
@@ -800,9 +825,11 @@
     svg = svgEl('svg', { class: 'cena escritorio pixel', viewBox: `0 0 ${CENA.largura} 200`, preserveAspectRatio: 'xMidYMin meet', role: 'img', 'aria-label': 'Escritório dos agentes' });
     defs = svgEl('defs');
     svg.appendChild(defs);
+    camadaBlocos = svgEl('g', {}, 'camada-blocos');
     camadaSalas = svgEl('g', {}, 'camada-salas');
     camadaRota = svgEl('g', {}, 'camada-rota');
     camadaLinks = svgEl('g', {}, 'camada-links');
+    svg.appendChild(camadaBlocos);
     svg.appendChild(camadaSalas);
     svg.appendChild(camadaRota);
     svg.appendChild(camadaLinks);
@@ -852,11 +879,31 @@
 
   function atualizar(dados) {
     if (!montado()) return;
-    const lista = prepararSalas(dados);
+    const blocos = agruparPorFrente(prepararSalas(dados), dados.frentes);
+    const lista = blocos.flatMap((b) => b.salas);
     const presentes = new Set(lista.map((s) => s.chave));
     let y = CENA.margem;
+    camadaBlocos.innerHTML = '';
+    const doBloco = new Map();
+    blocos.forEach((b) => b.salas.forEach((s) => doBloco.set(s.chave, b)));
+    let blocoAtual = null;
 
     lista.forEach((info) => {
+      const bloco = doBloco.get(info.chave);
+      if (bloco !== blocoAtual) {
+        blocoAtual = bloco;
+        if (bloco.chave) {
+          const cab = svgEl('g', { transform: `translate(${CENA.margem + 1},${y})` }, 'bloco-frente');
+          const nome = cab.appendChild(svgEl('text', { x: 0, y: 18 }, 'bloco-frente-nome'));
+          nome.textContent = bloco.nome;
+          if (bloco.descricao) cab.appendChild(svgEl('text', { x: 0, y: 18, dx: 0 }, 'bloco-frente-desc')).textContent = `· ${bloco.descricao}`;
+          camadaBlocos.appendChild(cab);
+          const desc = cab.querySelector('.bloco-frente-desc');
+          if (desc) desc.setAttribute('x', String(bloco.nome.length * 9 + 14));
+          cab.appendChild(svgEl('line', { x1: 0, y1: 26, x2: CENA.largura - CENA.margem * 2 - 2, y2: 26 }, 'bloco-frente-linha'));
+          y += CENA.cabecalho;
+        }
+      }
       const plano = planejarSala({ ativos: info.ativos, total: info.execucoes.length }, CENA.largura - CENA.margem * 2);
       const pos = { x: CENA.margem + 1, y };
       let sala = salas.get(info.chave);
@@ -980,7 +1027,7 @@
     const titulo = sala.estatico.querySelector('[data-papel="titulo"]');
     if (!titulo) return;
     titulo.textContent = info.nome;
-    const n = { trabalhando: 0, delegando: 0, aguardando: 0, concluida: 0, orfa: 0 };
+    const n = { trabalhando: 0, delegando: 0, aguardando: 0, ocioso: 0, concluida: 0, orfa: 0 };
     entidades.forEach((ent) => {
       if (ent.sala === sala.chave && !ent.sumindo && n[ent.status] !== undefined) n[ent.status] += 1;
     });
@@ -988,6 +1035,7 @@
       n.trabalhando && `${n.trabalhando} trabalhando`,
       n.delegando && `${n.delegando} delegando`,
       n.aguardando && `${n.aguardando} aguardando`,
+      n.ocioso && `${n.ocioso} ocioso(s)`,
       n.orfa && `${n.orfa} órfã(s)`,
       n.concluida && `${n.concluida} encerrada(s) · até 12 h`,
     ].filter(Boolean);
@@ -1021,6 +1069,8 @@
       return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
     };
     if (e.status === 'concluida') return `encerrou há ${formatar(e.desde_segundos)}`;
+    // desde o último evento; volta a ativo sozinho quando chega evento novo
+    if (e.status === 'ocioso') return `ocioso há ${formatar(e.ocioso_segundos ?? e.desde_segundos)}`;
     // o backend grava como último evento da órfã o instante em que a morte
     // foi percebida, não o último sinal real: dizer "sem sinal há" mentiria
     if (e.status === 'orfa') return `detectada há ${formatar(e.desde_segundos)}`;
@@ -1140,7 +1190,7 @@
     const naConvivencia = ent.vaga && CONVIVENCIA.includes(ent.vaga.zona);
     if (e.status === 'orfa') {
       ent.proxima = naConvivencia ? Infinity : performance.now();
-    } else if (e.status === 'concluida') {
+    } else if (e.status === 'concluida' || e.status === 'ocioso') {
       ent.proxima = naConvivencia ? performance.now() + entre(permanencia(ent)) : performance.now();
     } else {
       ent.proxima = Math.min(ent.proxima, performance.now() + entre([600, 2500]));
@@ -1199,7 +1249,7 @@
       pose = 'pe-frente';
       anim = 'anim-piscar';
     }
-    if (ent.status === 'orfa' || ent.status === 'concluida') anim = anim === 'anim-andar' ? anim : '';
+    if (ent.status === 'orfa' || ent.status === 'concluida' || ent.status === 'ocioso') anim = anim === 'anim-andar' ? anim : '';
     const chave = `${pose}|${anim}|${ent.dir === 'esq' ? 1 : 0}`;
     if (ent.pose === chave) return;
     ent.pose = chave;

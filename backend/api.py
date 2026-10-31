@@ -175,7 +175,7 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
     window = (now - timedelta(hours=horas)).isoformat(timespec="seconds")
     visible = (now - timedelta(hours=convivencia)).isoformat(timespec="seconds")
     rows = con.execute(
-        "SELECT * FROM execucao WHERE estado IN ('trabalhando', 'delegando', 'aguardando') "
+        "SELECT * FROM execucao WHERE estado IN ('trabalhando', 'delegando', 'aguardando', 'ocioso') "
         "OR julianday(criado_em) >= julianday(?) OR julianday(atualizado_em) >= julianday(?) "
         "ORDER BY atualizado_em DESC", (window, visible)
     ).fetchall()
@@ -191,7 +191,7 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
     principals_with_children = {row["pai_chave"] for row in con.execute(
         "SELECT DISTINCT pai_chave FROM execucao WHERE pai_chave IS NOT NULL"
     )}
-    room_items = [item for item in items if item["estado"] in active or
+    room_items = [item for item in items if item["estado"] in active or item["estado"] == runs.IDLE or
                   (convivencia and _in_window(item["atualizado_em"], visible) and
                    (item["pai_chave"] is not None or item["chave"] in principals_with_children or
                     _duration(item) >= 30))]
@@ -202,13 +202,15 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
     return {
         "horas": horas,
         "convivencia": convivencia,
+        "frentes": [{key: front.get(key) for key in ("chave", "nome", "descricao")}
+                    for front in (found["frentes"] if found else [])],
         "execucoes": room_items,
         "historico": summary_items,
         "historico_tipos": history,
         "sessoes": [item for item in summary_items if item["pai_chave"] is None],
         "resumo": {
             **{state: sum(item["estado"] == state for item in summary_items)
-               for state in ("trabalhando", "delegando", "aguardando", "concluida", "orfa")},
+               for state in ("trabalhando", "delegando", "aguardando", "ocioso", "concluida", "orfa")},
             "sessoes_ativas": len({item["session_id"] for item in summary_items if item["estado"] in active}),
             "execucoes_na_janela": len(summary_items),
         },
