@@ -1068,6 +1068,9 @@
       const m = Math.floor(s / 60);
       return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
     };
+    const os = [e.os_id, e.os_estado].filter(Boolean).join(' · ');
+    if (e.esperando_permissao) return `esperando permissão${os ? ` · ${os}` : ''}`;
+    if (os && (e.status === 'trabalhando' || e.status === 'delegando' || e.status === 'aguardando')) return `${os} · ${formatar(e.duracao_segundos)}`;
     if (e.status === 'concluida') return `encerrou há ${formatar(e.desde_segundos)}`;
     // desde o último evento; volta a ativo sozinho quando chega evento novo
     if (e.status === 'ocioso') return `ocioso há ${formatar(e.ocioso_segundos ?? e.desde_segundos)}`;
@@ -1096,7 +1099,7 @@
       tabindex: '0',
       role: 'button',
       style: `--pele:${ap.pele[0]};--pele-s:${ap.pele[1]};--cabelo:${ap.cabelo[0]};--cabelo-s:${ap.cabelo[1]};--camisa:${ap.camisa[0]};--camisa-s:${ap.camisa[1]};--calca:${ap.calca}`,
-    }, `personagem avatar pessoa ${e.status} familia-${familia} surgindo`);
+    }, `personagem avatar pessoa ${e.status} familia-${familia} surgindo${e.esperando_permissao ? ' esperando-permissao' : ''}`);
     el.appendChild(svgEl('rect', { x: -15, y: -3, width: 30, height: 4 }, 'pp-sombra'));
     const virar = svgEl('g', {}, 'virar');
     const q0 = svgEl('use', { x: -SW * P / 2, y: -SH * P, width: SW * P, height: SH * P }, 'pp-q0');
@@ -1181,8 +1184,9 @@
     ent.pai = e.execucao_pai_id || null;
     const classes = ['personagem', 'avatar', 'pessoa', e.status, `familia-${familiaDe(e.tipo_agente)}`];
     if (ent.rota) classes.push('andando');
+    if (e.esperando_permissao) classes.push('esperando-permissao');
     ent.el.setAttribute('class', classes.join(' '));
-    ent.el.setAttribute('aria-label', `${rotulo(e.tipo_agente, e)}: ${e.status}`);
+    ent.el.setAttribute('aria-label', `${rotulo(e.tipo_agente, e)}: ${e.status}${e.esperando_permissao ? ', esperando permissão' : ''}`);
     ent.el.querySelector('.tempo').textContent = tempoDe(e);
     if (antes === e.status) return;
     // mudou de estado: decide logo para onde vai. Quem encerrou ou ficou

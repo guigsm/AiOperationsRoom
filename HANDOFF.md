@@ -5,6 +5,7 @@
 - Hooks e filtro de campos: `hooks/capture.py`
 - Registro e remoção de hooks, demo e servidor: `backend/cli.py`
 - Leitura da fila e deduplicação: `backend/events.py`
+- Filas da sede (pendências do proprietário, OS por agente; só leitura): `backend/pendencias.py`
 - Regras de estados: `backend/runs.py`
 - Detecção de sessões órfãs pelo registro local do Claude Code: `backend/reconcile.py`
 - Esquema local: `backend/db.py`

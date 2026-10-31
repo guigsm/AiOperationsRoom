@@ -8,6 +8,8 @@ let sessions = [];
 let dashboard = { execucoes: [], resumo: {} };
 let editingId = null;
 let manifest = { ativo: false };
+let pendencias = { pendencias: { total: 0, por_tipo: [] }, agentes: [] };
+const tiposPendencia = { pode: 'Pode', vai: 'Vai', cartao: 'Cartão a clicar', 'abrir-chat': 'Abrir chat', arquivar: 'Arquivar', permissao: 'Permissão', decisao: 'Decisão', conferir: 'Conferir', outro: 'Outros' };
 let selected = null;
 let viewMode = 'office';
 const visualRuns = new Map();
@@ -46,6 +48,9 @@ function officeData() {
       execucao_pai_id: run.pai_chave ? visualId(run.pai_chave) : null,
       duracao_segundos: Math.max(0, Math.floor((Date.now() - Date.parse(run.criado_em)) / 1000)),
       ocioso_segundos: run.ocioso_segundos,
+      os_id: run.os_id,
+      os_estado: run.os_estado,
+      esperando_permissao: run.esperando_permissao,
       desde_segundos: Math.max(0, Math.floor((Date.now() - Date.parse(run.atualizado_em)) / 1000)),
     });
     if (['trabalhando', 'delegando', 'aguardando'].includes(run.estado)) room.ativos += 1;
@@ -53,6 +58,19 @@ function officeData() {
   }
   return { salas: [...rooms.values()], frentes: manifest.ativo ? (dashboard.frentes || []) : [] };
 }
+
+function renderPendencias() {
+  const box = $('#depende');
+  const grupos = pendencias.pendencias?.por_tipo || [];
+  const esperando = (pendencias.agentes || []).filter((agent) => agent.esperando_permissao);
+  if (!grupos.length && !esperando.length) { box.hidden = true; box.innerHTML = ''; return; }
+  const total = (pendencias.pendencias?.total || 0) + esperando.length;
+  const permissoes = esperando.length ? `<div class="depende-grupo permissao"><h3>Esperando permissão <span class="count">${esperando.length}</span></h3><ul>${esperando.map((agent) => `<li><strong>${esc(agent.personagem || 'Agente')}</strong><span>${esc(agent.projeto || '')}</span><small>responder no app do chat</small></li>`).join('')}</ul></div>` : '';
+  box.innerHTML = `<div class="depende-titulo"><h2>Depende de você <span class="count">${total}</span></h2></div><div class="depende-grupos">${permissoes}${grupos.map((grupo) => `<div class="depende-grupo"><h3>${esc(tiposPendencia[grupo.tipo] || grupo.tipo)} <span class="count">${grupo.itens.length}</span></h3><ul>${grupo.itens.map((item) => `<li><strong>${esc(item.projeto)}</strong><span>${esc(item.pedido)}</span><small>${esc(item.onde ? `onde responder: ${item.onde}` : '')}${item.desde ? ` · desde ${esc(item.desde)}` : ''}</small></li>`).join('')}</ul></div>`).join('')}</div>`;
+  box.hidden = false;
+}
+
+function osTexto(run) { return [run.os_id, run.os_estado].filter(Boolean).join(' · '); }
 
 function renderRoom() {
   const counts = dashboard.resumo;
@@ -67,7 +85,7 @@ function renderRoom() {
   const room = $('#office-room');
   if (viewMode === 'panel') {
     if (window.EscritorioPixel?.montado()) window.EscritorioPixel.destruir();
-    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td>${esc(run.rotulo || run.tipo)}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="4">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
+    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>OS</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td>${esc(run.rotulo || run.tipo)}</td><td>${esc(osTexto(run))}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}${run.esperando_permissao ? ' · esperando permissão' : ''}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
     return;
   }
   const data = officeData();
@@ -101,7 +119,7 @@ function renderProjects() {
   $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
 }
 
-async function refresh() { try { [projects, { sessoes: sessions }, dashboard, manifest] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto')]); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true); } }
+async function refresh() { try { [projects, { sessoes: sessions }, dashboard, manifest, pendencias] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto'), request('GET', '/pendencias')]); renderPendencias(); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true); } }
 document.addEventListener('click', (event) => { const button = event.target.closest('[data-view]'); if (!button) return; if (button.dataset.view === 'projects') window.location.assign('/projetos'); });
 $('#new-project').addEventListener('click', () => openProject());
 $('#show-archived').addEventListener('change', renderProjects);

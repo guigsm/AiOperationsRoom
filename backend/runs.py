@@ -101,6 +101,22 @@ def apply(con: sqlite3.Connection, event: dict) -> None:
         )
 
 
+def waiting_permission(con: sqlite3.Connection) -> set[str]:
+    """Sessões cujo último evento é um pedido de permissão e cujo chat principal segue com processo.
+
+    Dura até o próximo evento da própria sessão (qualquer um); não há estado novo na execução.
+    """
+    rows = con.execute(
+        "SELECT e.session_id FROM evento e WHERE (e.nome = 'PermissionRequest' OR (e.nome = 'Notification' "
+        "AND json_extract(e.dados, '$.notification_type') = 'permission_prompt')) "
+        "AND NOT EXISTS (SELECT 1 FROM evento n WHERE n.session_id = e.session_id AND "
+        "(n.ocorrido_em > e.ocorrido_em OR (n.ocorrido_em = e.ocorrido_em AND n.rowid > e.rowid))) "
+        "AND EXISTS (SELECT 1 FROM execucao x WHERE x.session_id = e.session_id AND x.pai_chave IS NULL "
+        "AND x.estado IN ('trabalhando', 'delegando', 'aguardando'))"
+    ).fetchall()
+    return {row["session_id"] for row in rows}
+
+
 def event_data(event: dict) -> str:
     safe = {key: value for key, value in event.items() if key not in {"prompt", "last_assistant_message"}}
     return json.dumps(safe, ensure_ascii=False, sort_keys=True)

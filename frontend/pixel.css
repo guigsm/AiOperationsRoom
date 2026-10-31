@@ -29,3 +29,5 @@
 @media (prefers-reduced-motion:reduce) { .pixel .pessoa *, .pixel .pp-tela *, .pixel .laco,.pixel .pp-sala .led { animation:none!important; } }
 
 .pixel .pessoa.ocioso { --estado:var(--cinza); opacity:.9; }.pixel .pessoa.ocioso .pp-marca-miolo { fill:#9a9aa6; }.pixel .bloco-frente-nome { fill:#f4f2fa; font-size:14px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }.pixel .bloco-frente-desc { fill:#8e8a9c; font-size:12px; }.pixel .bloco-frente-linha { stroke:rgba(255,255,255,.12); stroke-width:1; }
+
+.pixel .pessoa.esperando-permissao { --estado:var(--laranja); }.pixel .pessoa.esperando-permissao .pp-marca { animation:pp-pisca 1.2s steps(1) infinite; }.pixel .pessoa.esperando-permissao .tempo { fill:var(--laranja); }

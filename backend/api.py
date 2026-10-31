@@ -17,6 +17,7 @@ from backend.config import FRONTEND
 from backend.db import connect, init_db
 from backend.events import ingest
 from backend import manifest as manifesto
+from backend import pendencias as filas_mod
 from backend import projects
 from backend import runs
 from backend import titulo as titulos
@@ -143,6 +144,7 @@ def list_sessions(con: sqlite3.Connection = Depends(database)) -> dict:
     ingest(con)
     found, _mapped, resolve = _scope(con)
     siglas = _siglas(found)
+    contexto = _contexto_os(con, found)
     rows = con.execute(
         "SELECT session_id, cwd, ultimo_evento, ultima_atualizacao, titulo "
         "FROM sessao WHERE cwd <> '' ORDER BY ultima_atualizacao DESC LIMIT 200"
@@ -154,8 +156,27 @@ def list_sessions(con: sqlite3.Connection = Depends(database)) -> dict:
         match = resolve(session["cwd"])
         session["projeto_id"] = match["id"] if match else None
         session["projeto_nome"] = match["nome"] if match else None
+        _anotar(session, contexto, match)
         sessions.append(session)
     return {"sessoes": sessions}
+
+
+def _contexto_os(con: sqlite3.Connection, found: dict | None) -> dict:
+    """Filas lidas (só leitura), sessões esperando permissão e IDs de OS que já têm executor com título."""
+    executores = {titulos.parse(row["titulo"]).get("os_id") for row in con.execute("SELECT titulo FROM sessao WHERE titulo <> ''")}
+    return {"filas": filas_mod.ler_filas(found), "esperando": runs.waiting_permission(con),
+            "executores": {item for item in executores if item},
+            "sala_por_nome": {room["nome"]: room["id"] for room in (found["salas"] if found else [])}}
+
+
+def _anotar(item: dict, contexto: dict, match: dict | None) -> None:
+    """os_estado, os_situacao e esperando_permissao no item de uma sessão ou execução principal."""
+    principal = item.get("pai_chave") is None
+    sala = contexto["sala_por_nome"].get(item.get("projeto") or "") or (match["id"] if match else None)
+    linha = filas_mod.os_da_sala(contexto["filas"], sala, item.get("os_id")) if principal else None
+    item["os_estado"] = linha["estado"] if linha else None
+    item["os_situacao"] = linha["situacao"] if linha else None
+    item["esperando_permissao"] = bool(principal and item.get("session_id") in contexto["esperando"])
 
 
 def _siglas(found: dict | None) -> dict[str, str]:
@@ -179,12 +200,17 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
         "OR julianday(criado_em) >= julianday(?) OR julianday(atualizado_em) >= julianday(?) "
         "ORDER BY atualizado_em DESC", (window, visible)
     ).fetchall()
-    items = [runs.public(row, resolve(row["cwd"])) for row in rows]
-    for item in items:
+    contexto = _contexto_os(con, found)
+    items = []
+    for row in rows:
+        match = resolve(row["cwd"])
+        item = runs.public(row, match)
         # Only the main chat carries the title; subagents keep the type the room already shows.
         if item["pai_chave"] is None:
             item["titulo"] = chat_titles.get(item["session_id"], "")
             item.update(titulos.parse(item["titulo"], siglas))
+        _anotar(item, contexto, match)
+        items.append(item)
     active = runs.ACTIVE
     summary_items = [item for item in items if item["estado"] in active or
                      _in_window(item["criado_em"], window) or _in_window(item["atualizado_em"], window)]
@@ -231,6 +257,32 @@ def _duration(item: dict) -> float:
         return (end - start).total_seconds()
     except (AttributeError, ValueError, TypeError):
         return 0
+
+
+@app.get("/api/pendencias")
+def pending(con: sqlite3.Connection = Depends(database)) -> dict:
+    """O que depende do proprietário (seções das filas) e o que cada agente faz. Só lê as filas."""
+    ingest(con)
+    reconcile(con)
+    found, _mapped, resolve = _scope(con)
+    siglas = _siglas(found)
+    contexto = _contexto_os(con, found)
+    titles = {row["session_id"]: row["titulo"] for row in con.execute("SELECT session_id, titulo FROM sessao")}
+    agents = []
+    for row in con.execute(
+        "SELECT * FROM execucao WHERE pai_chave IS NULL AND estado IN ('trabalhando', 'delegando', 'aguardando', 'ocioso') "
+        "ORDER BY atualizado_em DESC"
+    ):
+        match = resolve(row["cwd"])
+        item = runs.public(row, match)
+        item["titulo"] = titles.get(row["session_id"], "")
+        item.update(titulos.parse(item["titulo"], siglas))
+        _anotar(item, contexto, match)
+        agents.append({"sessao": item["session_id"], "personagem": item["rotulo"], "projeto": item["projeto_nome"],
+                       "os_id": item["os_id"], "os_estado": item["os_estado"], "os_situacao": item["os_situacao"],
+                       "estado": item["estado"], "esperando_permissao": item["esperando_permissao"]})
+    return {"pendencias": filas_mod.pendencias(found, contexto["filas"], contexto["executores"]),
+            "agentes": agents, "lido_em": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 
 
 @app.get("/api/sessoes/{session_id}/historico")

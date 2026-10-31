@@ -13,7 +13,7 @@ from pathlib import Path
 from backend.config import ROOT
 
 
-EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "SessionEnd")
+EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "SessionEnd", "PermissionRequest")
 
 
 def settings_path() -> Path:
