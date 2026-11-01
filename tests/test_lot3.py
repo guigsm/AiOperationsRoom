@@ -188,3 +188,28 @@ def test_api_with_manifest_closes_manual_registration(client, monkeypatch, tmp_p
 def test_api_without_manifest_keeps_manual_mapping(client):
     assert client.get("/api/manifesto").json() == {"ativo": False}
     assert client.post("/api/projetos", json={"nome": "Sede", "caminho_local": "C:\\intoca"}).status_code == 201
+
+
+# --- SAL-05: título em UTF-8 ------------------------------------------------
+
+def test_repair_mojibake_titles():
+    assert titulo.repair("Gerente Â· Sala") == "Gerente · Sala"
+    assert titulo.repair("Executor Â· LOC-10 cwd") == "Executor · LOC-10 cwd"
+    assert titulo.repair("AudiÃ§Ã£o") == "Audição"
+    assert titulo.repair("Gerente · Sala") == "Gerente · Sala"
+    assert titulo.repair("Audição Paulista") == "Audição Paulista"
+    assert titulo.repair("AÇÃO") == "AÇÃO"
+    assert titulo.parse("Gerente Â· Sala")["rotulo"] == "Gerente · Sala"
+    assert titulo.parse("Executor Â· SAL-05 titulo", {"SAL": "sala"})["os_id"] == "SAL-05"
+
+
+def test_hook_reads_stdin_as_utf8_bytes(tmp_path):
+    hook = Path(__file__).resolve().parent.parent / "hooks" / "capture.py"
+    env = {"AI_OPERATIONS_ROOM_DATA_DIR": str(tmp_path), "SYSTEMROOT": "C:\\Windows"}
+    payload = {"hook_event_name": "UserPromptSubmit", "session_id": "s9", "cwd": "C:\\x",
+               "session_title": "Executor · SAL-05 audição"}
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    done = subprocess.run([sys.executable, str(hook)], input=raw, capture_output=True, env=env, timeout=30)
+    assert done.returncode == 0 and done.stdout == b"" and done.stderr == b""
+    line = json.loads((tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert line["session_title"] == "Executor · SAL-05 audição"

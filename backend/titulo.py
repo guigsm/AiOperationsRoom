@@ -9,6 +9,16 @@ CARGOS = {"diretoria": "Diretoria", "gerente": "Gerente", "plantão": "Plantão"
 OS_ID = re.compile(r"^([A-Za-z]{2,8}-\d+[A-Za-z]?)(?:\s+(.*))?$")
 
 
+def repair(title: str) -> str:
+    """Undo UTF-8 text decoded as cp1252 (hook bug before SAL-05); correct titles come back unchanged."""
+    if "Â" not in title and "Ã" not in title:
+        return title
+    try:
+        return title.encode("cp1252").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return title
+
+
 def parse(title: str | None, siglas: dict[str, str] | None = None) -> dict:
     """Return cargo, projeto, os_id and rotulo; every value is None when the title is absent or off-pattern.
 
@@ -17,7 +27,7 @@ def parse(title: str | None, siglas: dict[str, str] | None = None) -> dict:
     empty = {"cargo": None, "projeto": None, "os_id": None, "rotulo": None}
     if not isinstance(title, str):
         return empty
-    parts = [part.strip() for part in title.split("·")]
+    parts = [part.strip() for part in repair(title).split("·")]
     cargo = CARGOS.get(parts[0].casefold()) if len(parts) > 1 else None
     if cargo is None or not parts[1]:
         return empty

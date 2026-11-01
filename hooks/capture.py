@@ -47,7 +47,7 @@ def normalize(payload: dict) -> dict:
 
 def main() -> int:
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace") or "{}")
         if not isinstance(payload, dict) or not payload.get("session_id"):
             return 0
         if payload.get("hook_event_name") == "Notification" and not is_permission(payload):
