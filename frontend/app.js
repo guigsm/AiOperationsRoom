@@ -8,6 +8,7 @@ let sessions = [];
 let dashboard = { execucoes: [], resumo: {} };
 let editingId = null;
 let manifest = { ativo: false };
+let dependeAberto = null;
 let pendencias = { pendencias: { total: 0, por_tipo: [] }, agentes: [] };
 const tiposPendencia = { pode: 'Pode', vai: 'Vai', cartao: 'Cartão a clicar', 'abrir-chat': 'Abrir chat', arquivar: 'Arquivar', permissao: 'Permissão', decisao: 'Decisão', conferir: 'Conferir', outro: 'Outros' };
 let selected = null;
@@ -63,9 +64,20 @@ function renderPendencias() {
   const esperando = (pendencias.agentes || []).filter((agent) => agent.esperando_permissao);
   if (!grupos.length && !esperando.length) { box.hidden = true; box.innerHTML = ''; return; }
   const total = (pendencias.pendencias?.total || 0) + esperando.length;
+  if (dependeAberto === null) dependeAberto = DependeEstado.lerAberto(armazemLocal());
+  const aberto = dependeAberto;
   const permissoes = esperando.length ? `<div class="depende-grupo permissao"><h3>Esperando permissão <span class="count">${esperando.length}</span></h3><ul>${esperando.map((agent) => `<li><strong>${esc(agent.personagem || 'Agente')}</strong><span>${esc(agent.projeto || '')}</span><small>responder no app do chat</small></li>`).join('')}</ul></div>` : '';
-  box.innerHTML = `<div class="depende-titulo"><h2>Depende de você <span class="count">${total}</span></h2></div><div class="depende-grupos">${permissoes}${grupos.map((grupo) => `<div class="depende-grupo"><h3>${esc(tiposPendencia[grupo.tipo] || grupo.tipo)} <span class="count">${grupo.itens.length}</span></h3><ul>${grupo.itens.map((item) => `<li><strong>${esc(item.projeto)}</strong><span>${esc(item.pedido)}</span><small>${esc(item.onde ? `onde responder: ${item.onde}` : '')}${item.desde ? ` · desde ${esc(item.desde)}` : ''}</small></li>`).join('')}</ul></div>`).join('')}</div>`;
+  box.innerHTML = `<div class="depende-titulo"><h2>Depende de você <span class="count">${total}</span></h2><button type="button" class="botao-mini" id="depende-alternar" aria-expanded="${aberto}" aria-controls="depende-corpo">${aberto ? 'Ocultar' : 'Exibir'}</button></div><div class="depende-grupos" id="depende-corpo"${aberto ? '' : ' hidden'}>${permissoes}${grupos.map((grupo) => `<div class="depende-grupo"><h3>${esc(tiposPendencia[grupo.tipo] || grupo.tipo)} <span class="count">${grupo.itens.length}</span></h3><ul>${grupo.itens.map((item) => `<li><strong>${esc(item.projeto)}</strong><span>${esc(item.pedido)}</span><small>${esc(item.onde ? `onde responder: ${item.onde}` : '')}${item.desde ? ` · desde ${esc(item.desde)}` : ''}</small></li>`).join('')}</ul></div>`).join('')}</div>`;
+  $('#depende-alternar').addEventListener('click', alternarDepende);
   box.hidden = false;
+}
+function armazemLocal() { try { return window.localStorage; } catch (erro) { return null; } }
+$('#office-summary').addEventListener('click', (event) => { if (event.target.closest('[data-depende]') && !$('#depende').hidden) alternarDepende(); });
+$('#office-summary').addEventListener('keydown', (event) => { if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-depende]') && !$('#depende').hidden) { event.preventDefault(); alternarDepende(); } });
+function alternarDepende() {
+  dependeAberto = !dependeAberto;
+  DependeEstado.gravarAberto(dependeAberto, armazemLocal());
+  renderPendencias();
 }
 
 function totalPendencias() { return (pendencias.pendencias?.total || 0) + (pendencias.agentes || []).filter((agent) => agent.esperando_permissao).length; }
@@ -90,7 +102,7 @@ function renderRoom() {
     ['rosa', 'Depende de você', totalPendencias()],
     ['roxo', 'Projetos ativos', new Set(dashboard.execucoes.filter((run) => ['trabalhando', 'delegando', 'aguardando'].includes(run.estado) && run.projeto_id).map((run) => run.projeto_id)).size],
   ];
-  $('#office-summary').innerHTML = metrics.map(([color, label, value]) => `<article class="kpi"><span class="kpi-rotulo"><i class="ponto ${color}"></i>${label}</span><strong class="kpi-valor">${value}</strong></article>`).join('');
+  $('#office-summary').innerHTML = metrics.map(([color, label, value]) => `<article class="kpi"${label === 'Depende de você' ? ' data-depende role="button" tabindex="0"' : ''}><span class="kpi-rotulo"><i class="ponto ${color}"></i>${label}</span><strong class="kpi-valor">${value}</strong></article>`).join('');
   $('#operation-bar').innerHTML = `<span class="ao-vivo"><i></i>Ao vivo</span><span>${counts.sessoes_ativas || 0} sessão(ões) ativa(s)</span><span class="sep">·</span><span>${counts.execucoes_na_janela || 0} execução(ões) nas últimas ${dashboard.horas || 6} h</span><span class="meta-fim">atualiza a cada 4 s</span>`;
   const room = $('#office-room');
   if (viewMode === 'panel') {
