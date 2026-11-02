@@ -41,3 +41,4 @@
 .aviso-acoes .botao-mini { border:1px solid var(--borda-forte); }
 .aviso-ok { color:#4ade80; font-size:12px; }
 .empty.erro { color:#f87171; }
+[hidden] { display:none !important; }

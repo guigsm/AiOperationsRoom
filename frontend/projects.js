@@ -27,6 +27,7 @@ function render() {
   const unknown = new Map();
   for (const session of sessions) if (session.projeto_id === null) { const entry = unknown.get(session.cwd) || { cwd: session.cwd, count: 0 }; entry.count += 1; unknown.set(session.cwd, entry); }
   $('#new-project').hidden = manifest.ativo;
+  $('#manifest-aviso').hidden = !manifest.ativo;
   $('#unmapped-count').textContent = unknown.size;
   if (!carregouSessoes) listaSem.innerHTML = erroCarga ? falhou(erroCarga) : carregando(); else $('#unmapped-list').innerHTML = unknown.size ? [...unknown.values()].map((entry) => `<div class="row"><div class="row-main"><strong class="path">${esc(entry.cwd)}</strong><small>${entry.count} sessão(ões)</small></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="create" data-path="${esc(entry.cwd)}">Criar projeto</button><button data-action="map" data-path="${esc(entry.cwd)}">Mapear existente</button></div></div>`).join('') : '<p class="empty">Nenhum caminho sem projeto.</p>';
   if (!carregouProjetos) { listaProj.innerHTML = erroCarga ? falhou(erroCarga) : carregando(); return; }
