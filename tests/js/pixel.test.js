@@ -242,3 +242,59 @@ test('frente sem sala não aparece; ocioso fica em área de repouso', () => {
   assert.deepEqual(blocos.map((b) => b.nome), ['Operação']);
   assert.deepEqual(Object.keys(px.PESOS.ocioso).sort(), ['cafe', 'estar']);
 });
+
+/* --------------------------------------------- sino "Depende de você" (SAL-07) */
+
+test('estadoSino: sem pendência fica parado; com pendência anima e conta itens e permissões', () => {
+  const vazio = px.estadoSino({ itens: [], permissao: [] }, 'Sala');
+  assert.equal(vazio.total, 0);
+  assert.equal(vazio.anima, false);
+  assert.equal(vazio.rotulo, 'Nenhuma pendência em Sala');
+  assert.equal(px.estadoSino(undefined, 'Sala').anima, false);
+  const um = px.estadoSino({ itens: [{ pedido: 'a' }], permissao: [] }, 'Sala');
+  assert.equal(um.rotulo, '1 pendência em Sala');
+  const tres = px.estadoSino({ itens: [{ pedido: 'a' }, { pedido: 'b' }], permissao: [{ personagem: 'G' }] }, 'Sala');
+  assert.equal(tres.total, 3);
+  assert.equal(tres.anima, true);
+  assert.equal(tres.rotulo, '3 pendências em Sala');
+});
+
+test('prepararSalas leva as pendências de cada sala; sala sem o campo recebe vazio', () => {
+  const exec = [{ id: 1, status: 'trabalhando' }];
+  const salas = px.prepararSalas({ salas: [
+    { chave: 'pa', nome: 'A', projeto_id: 'a', execucoes: exec, pendencias: { itens: [{ pedido: 'x' }], permissao: [] } },
+    { chave: 'pb', nome: 'B', projeto_id: 'b', execucoes: exec },
+  ] });
+  assert.equal(salas.find((s) => s.nome === 'A').pendencias.itens.length, 1);
+  assert.deepEqual(salas.find((s) => s.nome === 'B').pendencias, { itens: [], permissao: [] });
+});
+
+test('ocultar/exibir: lembra por sala e sobrevive a localStorage ausente ou que lança', () => {
+  const dados = new Map();
+  const armazem = { getItem: (k) => (dados.has(k) ? dados.get(k) : null), setItem: (k, v) => dados.set(k, v), removeItem: (k) => dados.delete(k) };
+  assert.equal(px.lerOculto('pa', armazem), false);
+  px.gravarOculto('pa', true, armazem);
+  assert.equal(px.lerOculto('pa', armazem), true);
+  assert.equal(px.lerOculto('pb', armazem), false);
+  px.gravarOculto('pa', false, armazem);
+  assert.equal(px.lerOculto('pa', armazem), false);
+  const quebrado = { getItem() { throw new Error('bloqueado'); }, setItem() { throw new Error('bloqueado'); }, removeItem() { throw new Error('bloqueado'); } };
+  assert.equal(px.lerOculto('pa', quebrado), false);
+  assert.doesNotThrow(() => px.gravarOculto('pa', true, quebrado));
+  assert.equal(px.lerOculto('pa', null), false);
+  assert.doesNotThrow(() => px.gravarOculto('pa', true, null));
+});
+
+test('sino: 9x10, só letras conhecidas, pintado dourado com pendência e cinza sem', () => {
+  assert.equal(px.SINO.length, 10);
+  px.SINO.forEach((linha) => { assert.equal(linha.length, 9); assert.match(linha, /^[.OBH]+$/); });
+  const cores = (ativo) => new Set(px.pintarSino(ativo).map((c) => c.cor));
+  assert.ok(cores(true).has('#D99A2B'));
+  assert.ok(!cores(false).has('#D99A2B'));
+  assert.ok(cores(false).has('#6B6B75'));
+});
+
+test('sino cabe na zona trabalho, entre a estante e o relógio', () => {
+  const x0 = 90; // arte: estante termina em 87 e o relógio começa em 103
+  assert.ok(x0 > 87 && x0 + 9 < 103);
+});

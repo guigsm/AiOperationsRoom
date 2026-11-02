@@ -303,7 +303,7 @@ def pending(con: sqlite3.Connection = Depends(database)) -> dict:
         item.update(titulos.parse(item["titulo"], siglas))
         _anotar(item, contexto, match)
         agents.append({"sessao": item["session_id"], "personagem": item["rotulo"], "projeto": item["projeto_nome"],
-                       "os_id": item["os_id"], "os_estado": item["os_estado"], "os_situacao": item["os_situacao"],
+                       "projeto_id": item["projeto_id"], "os_id": item["os_id"], "os_estado": item["os_estado"], "os_situacao": item["os_situacao"],
                        "estado": item["estado"], "esperando_permissao": item["esperando_permissao"]})
     return {"pendencias": filas_mod.pendencias(found, contexto["filas"], contexto["executores"]),
             "agentes": agents, "lido_em": datetime.now(timezone.utc).isoformat(timespec="seconds")}

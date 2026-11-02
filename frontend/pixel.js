@@ -500,6 +500,7 @@
         cwd: s.cwd,
         frente: s.frente,
         execucoes: s.execucoes,
+        pendencias: s.pendencias || { itens: [], permissao: [] },
         ativos: Number.isInteger(s.ativos) ? s.ativos : s.execucoes.filter((e) => ATIVOS.includes(e.status)).length,
       }));
     salas.sort((a, b) => {
@@ -758,7 +759,67 @@
     return p.saida();
   }
 
+  /* ------------------------------------------- sino "Depende de você" */
+
+  /* Pendências de uma sala: itens das filas do projeto e agentes esperando
+     permissão. `anima` é o que faz o sino balançar: só com pendência. */
+  function estadoSino(pend, nome) {
+    const itens = (pend && pend.itens) || [];
+    const permissao = (pend && pend.permissao) || [];
+    const total = itens.length + permissao.length;
+    const rotuloNome = nome || 'esta sala';
+    return {
+      total,
+      itens,
+      permissao,
+      anima: total > 0,
+      rotulo: total === 0 ? `Nenhuma pendência em ${rotuloNome}` : `${total} ${total === 1 ? 'pendência' : 'pendências'} em ${rotuloNome}`,
+    };
+  }
+
+  const CHAVE_OCULTO = 'sala.pendencias.oculto.';
+  /* localStorage pode faltar ou lançar (janela privada, dados bloqueados): a tela funciona sem ele. */
+  function lerOculto(chave, armazem) {
+    try { return Boolean(armazem) && armazem.getItem(CHAVE_OCULTO + chave) === '1'; } catch (erro) { return false; }
+  }
+  function gravarOculto(chave, oculto, armazem) {
+    try {
+      if (!armazem) return;
+      if (oculto) armazem.setItem(CHAVE_OCULTO + chave, '1');
+      else armazem.removeItem(CHAVE_OCULTO + chave);
+    } catch (erro) { /* sem armazenamento: vale só nesta visita */ }
+  }
+
+  /* Sino de 9x10 pixels de arte. `ativo` = dourado; sem pendência, cinza. */
+  const SINO = [
+    '....O....',
+    '...OBO...',
+    '..OBBBO..',
+    '..OBHBO..',
+    '..OBBBO..',
+    '.OBBBBBO.',
+    '.OBBBBBO.',
+    'OOOOOOOOO',
+    '...OBO...',
+    '....O....',
+  ];
+  function pintarSino(ativo) {
+    const cores = { O: '#0D0C12', B: ativo ? '#D99A2B' : '#6B6B75', H: ativo ? '#F2C45A' : '#8F8A9E' };
+    const p = criarPintor();
+    SINO.forEach((linha, y) => {
+      let x = 0;
+      while (x < linha.length) {
+        let fim = x;
+        while (fim < linha.length && linha[fim] === linha[x]) fim += 1;
+        if (linha[x] !== '.') p.r(x, y, fim - x, 1, cores[linha[x]]);
+        x = fim;
+      }
+    });
+    return p.saida();
+  }
+
   const logica = {
+    estadoSino, lerOculto, gravarOculto, pintarSino, SINO,
     P, SW, SH, POSES, ESTILOS, CABECAS, COR_FIXA, CLASSE_VAR, PESOS, X,
     mapaPessoa, aparencia, compilar, planejarSala, criarGrade, rota, sortearZona, escolherVaga,
     prepararSalas, agruparPorFrente, pintarSala, hash, abreviarRotulo,
@@ -825,6 +886,7 @@
   let raf = null;
   let ultimoQuadro = 0;
   let timerAgenda = null;
+  let ultimosDados = null;
 
   function montar(container, dados, opcoes) {
     destruir();
@@ -887,6 +949,7 @@
 
   function atualizar(dados) {
     if (!montado()) return;
+    ultimosDados = dados;
     const blocos = agruparPorFrente(prepararSalas(dados), dados.frentes);
     const lista = blocos.flatMap((b) => b.salas);
     const presentes = new Set(lista.map((s) => s.chave));
@@ -923,7 +986,8 @@
         if (sala.plano.assinatura !== plano.assinatura) redesenharSala(sala, plano);
         if (sala.y !== pos.y) moverSala(sala, pos);
       }
-      y += plano.altura + CENA.margem;
+      sincronizarPendencias(sala, info);
+      y += plano.altura + sala.extra + CENA.margem;
     });
 
     salas.forEach((sala, chave) => {
@@ -970,10 +1034,89 @@
     el.appendChild(estatico);
     el.appendChild(gente);
     camadaSalas.appendChild(el);
-    const sala = { chave: info.chave, el, estatico, gente, plano, grade: null, x: pos.x, y: pos.y, dados: info, telas: new Map() };
+    const sala = { chave: info.chave, el, estatico, gente, plano, grade: null, x: pos.x, y: pos.y, dados: info, telas: new Map(), aberta: false, extra: 0, assinaturaPainel: null, sinoAtivo: null };
     redesenharSala(sala, plano);
+    criarSino(sala);
     setTimeout(() => el.classList.remove('nascendo'), 40);
     return sala;
+  }
+
+  /* --------------------------------------------- sino e área de pendências */
+
+  const XHTML = 'http://www.w3.org/1999/xhtml';
+  const armazem = () => { try { return raiz.localStorage; } catch (erro) { return null; } };
+  const idPendencia = (sala) => `pend-${hash(sala.chave).toString(36)}`;
+
+  // Sino na zona "trabalho", entre a estante e o relógio (arte x 90–98, y 19–28).
+  function criarSino(sala) {
+    const fo = svgEl('foreignObject', { x: 265, y: 54, width: 36, height: 36 }, 'pp-sino-fo');
+    fo.innerHTML = `<button xmlns="${XHTML}" type="button" class="pp-sino" aria-expanded="false" aria-controls="${idPendencia(sala)}"><svg class="pp-sino-arte" viewBox="0 0 9 10" width="27" height="30" aria-hidden="true" focusable="false"></svg><i class="pp-sino-ponto"></i></button>`;
+    const botao = fo.querySelector('button');
+    botao.addEventListener('click', () => {
+      sala.aberta = !sala.aberta;
+      if (ultimosDados) atualizar(ultimosDados);
+    });
+    const painel = svgEl('foreignObject', { x: 0, y: 0, width: sala.plano.largura, height: 0 }, 'pp-pend-fo');
+    painel.style.display = 'none';
+    painel.addEventListener('click', (evento) => {
+      if (!evento.target.closest || !evento.target.closest('.pp-pend-alterna')) return;
+      const oculto = !lerOculto(sala.chave, armazem());
+      gravarOculto(sala.chave, oculto, armazem());
+      sala.oculto = oculto;
+      sala.assinaturaPainel = null;
+      if (ultimosDados) atualizar(ultimosDados);
+    });
+    sala.el.appendChild(fo);
+    sala.el.appendChild(painel);
+    sala.sino = botao;
+    sala.painel = painel;
+  }
+
+  function htmlPendencias(sala, est, oculto) {
+    const id = idPendencia(sala);
+    const nome = sala.dados.nome;
+    const itens = est.permissao.map((a) => `<li class="perm"><span class="pp-pend-tipo">Permissão</span><span class="pp-pend-pedido"><b>${esc(a.personagem)}</b> está esperando permissão</span><small>responder no app do chat</small></li>`)
+      .concat(est.itens.map((i) => `<li><span class="pp-pend-tipo">${esc(i.tipoNome || i.tipo)}</span><span class="pp-pend-pedido">${esc(i.pedido)}</span><small>${esc([i.onde && `onde responder: ${i.onde}`, i.desde && `desde ${i.desde}`].filter(Boolean).join(' · '))}</small></li>`));
+    const corpo = est.total ? `<ul class="pp-pend-lista">${itens.join('')}</ul>` : '<p class="pp-pend-vazio">Nada pendente.</p>';
+    return `<div xmlns="${XHTML}" class="pp-pend" id="${id}" role="region" aria-label="Depende de você em ${esc(nome)}"><div class="pp-pend-topo"><strong>Depende de você</strong><span class="pp-pend-n">${est.total}</span><span class="pp-pend-proj">${esc(nome)}</span><button type="button" class="pp-pend-alterna" aria-expanded="${oculto ? 'false' : 'true'}" aria-controls="${id}-texto">${oculto ? 'Exibir texto' : 'Ocultar texto'}</button></div><div class="pp-pend-texto" id="${id}-texto"${oculto ? ' hidden' : ''}>${corpo}</div></div>`;
+  }
+
+  function sincronizarPendencias(sala, info) {
+    if (!sala.sino) return;
+    const est = estadoSino(info.pendencias, info.nome);
+    const botao = sala.sino;
+    botao.classList.toggle('pendente', est.anima);
+    botao.setAttribute('data-anima', est.anima ? '1' : '0');
+    botao.setAttribute('data-total', String(est.total));
+    botao.setAttribute('aria-label', est.rotulo);
+    botao.setAttribute('aria-expanded', sala.aberta ? 'true' : 'false');
+    botao.title = est.rotulo;
+    if (sala.sinoAtivo !== est.anima) {
+      sala.sinoAtivo = est.anima;
+      botao.querySelector('svg').innerHTML = pintarSino(est.anima).map((c) => `<path d="${c.d}" fill="${c.cor}"/>`).join('');
+    }
+    const painel = sala.painel;
+    if (!sala.aberta) {
+      painel.style.display = 'none';
+      sala.extra = 0;
+      return;
+    }
+    const oculto = sala.oculto === undefined ? lerOculto(sala.chave, armazem()) : sala.oculto;
+    sala.oculto = oculto;
+    const assinatura = JSON.stringify([est.itens, est.permissao, info.nome, oculto]);
+    painel.setAttribute('y', String(sala.plano.altura + 4));
+    painel.setAttribute('width', String(sala.plano.largura));
+    if (assinatura !== sala.assinaturaPainel) {
+      sala.assinaturaPainel = assinatura;
+      painel.innerHTML = htmlPendencias(sala, est, oculto);
+      painel.style.display = '';
+      painel.setAttribute('height', '1200'); // folga para medir; depois ajusta
+      const caixa = painel.firstElementChild;
+      const altura = caixa ? Math.ceil(caixa.offsetHeight) : 0;
+      sala.extra = (altura || 60) + 4;
+      painel.setAttribute('height', String(sala.extra - 4));
+    }
+    painel.style.display = '';
   }
 
   function redesenharSala(sala, plano) {

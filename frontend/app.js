@@ -33,7 +33,7 @@ function officeData() {
   visualRuns.clear();
   for (const run of dashboard.execucoes) {
     const key = run.projeto_id ? `p${run.projeto_id}` : `c${String(run.cwd || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()}`;
-    const room = rooms.get(key) || { chave: key, nome: run.projeto_nome || 'Sem projeto', projeto_id: run.projeto_id, frente: run.frente, frente_nome: run.frente_nome, cwd: run.cwd, ativos: 0, execucoes: [] };
+    const room = rooms.get(key) || { chave: key, nome: run.projeto_nome || 'Sem projeto', projeto_id: run.projeto_id, frente: run.frente, frente_nome: run.frente_nome, cwd: run.cwd, ativos: 0, execucoes: [], pendencias: pendenciasDaSala(run.projeto_id) };
     const id = visualId(run.chave);
     visualRuns.set(String(id), run);
     room.execucoes.push({
@@ -68,6 +68,16 @@ function renderPendencias() {
   box.hidden = false;
 }
 
+function totalPendencias() { return (pendencias.pendencias?.total || 0) + (pendencias.agentes || []).filter((agent) => agent.esperando_permissao).length; }
+function pendenciasDaSala(projetoId) {
+  if (!projetoId) return { itens: [], permissao: [] };
+  const grupo = (pendencias.pendencias?.por_projeto || []).find((entry) => entry.projeto_id === projetoId);
+  return {
+    itens: (grupo?.itens || []).map((item) => ({ tipo: item.tipo, tipoNome: tiposPendencia[item.tipo] || item.tipo, pedido: item.pedido, onde: item.onde, desde: item.desde })),
+    permissao: (pendencias.agentes || []).filter((agent) => agent.esperando_permissao && agent.projeto_id === projetoId).map((agent) => ({ personagem: agent.personagem || 'Agente' })),
+  };
+}
+
 function abreviar(texto) { return window.EscritorioPixel?.logica?.abreviarRotulo ? window.EscritorioPixel.logica.abreviarRotulo(texto) : texto; }
 function osTexto(run) { return [run.os_id, run.os_estado].filter(Boolean).join(' · '); }
 
@@ -77,6 +87,7 @@ function renderRoom() {
     ['verde', 'Trabalhando', counts.trabalhando || 0],
     ['azul', 'Delegando', counts.delegando || 0],
     ['laranja', 'Aguardando', counts.aguardando || 0],
+    ['rosa', 'Depende de você', totalPendencias()],
     ['roxo', 'Projetos ativos', new Set(dashboard.execucoes.filter((run) => ['trabalhando', 'delegando', 'aguardando'].includes(run.estado) && run.projeto_id).map((run) => run.projeto_id)).size],
   ];
   $('#office-summary').innerHTML = metrics.map(([color, label, value]) => `<article class="kpi"><span class="kpi-rotulo"><i class="ponto ${color}"></i>${label}</span><strong class="kpi-valor">${value}</strong></article>`).join('');
