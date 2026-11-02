@@ -300,6 +300,6 @@ test('sino cabe na zona trabalho, entre a estante e o relógio', () => {
 });
 
 test('opcoesRolagem: suave por padrão e direta com "reduzir movimento"', () => {
-  assert.deepEqual(px.opcoesRolagem(false), { block: 'nearest', behavior: 'smooth' });
-  assert.deepEqual(px.opcoesRolagem(true), { block: 'nearest', behavior: 'auto' });
+  assert.deepEqual(px.opcoesRolagem(false), { block: 'start', behavior: 'smooth' });
+  assert.deepEqual(px.opcoesRolagem(true), { block: 'start', behavior: 'auto' });
 });

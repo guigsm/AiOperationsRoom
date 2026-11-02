@@ -59,3 +59,4 @@
 .pixel .pp-pend-vazio { margin:0; color:#8f8a9e; }
 .pixel .pp-pend-titulo:focus { outline:none; }
 .pixel .pp-pend-titulo:focus-visible { outline:2px solid #f4f2fa; outline-offset:2px; border-radius:3px; }
+.pixel .pp-pend-fo { scroll-margin-top:16px; }

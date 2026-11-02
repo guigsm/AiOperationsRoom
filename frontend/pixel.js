@@ -779,7 +779,7 @@
 
   /* Rolagem suave até a área aberta pelo sino; com "reduzir movimento" vai direto. */
   function opcoesRolagem(reduzir) {
-    return { block: 'nearest', behavior: reduzir ? 'auto' : 'smooth' };
+    return { block: 'start', behavior: reduzir ? 'auto' : 'smooth' };
   }
 
   const CHAVE_OCULTO = 'sala.pendencias.oculto.';
@@ -1205,7 +1205,7 @@
       n.delegando && `${n.delegando} delegando`,
       n.aguardando && `${n.aguardando} aguardando`,
       n.ocioso && `${n.ocioso} ocioso(s)`,
-      n.orfa && `${n.orfa} com comunicação perdida`,
+      n.orfa && `${n.orfa} sem comunicação`,
       n.concluida && `${n.concluida} encerrada(s) · até 12 h`,
     ].filter(Boolean);
     sala.estatico.querySelector('[data-papel="resumo"]').textContent = partes.join(' · ') || 'sala vazia';
@@ -1245,7 +1245,7 @@
     if (e.status === 'ocioso') return `ocioso há ${formatar(e.ocioso_segundos ?? e.desde_segundos)}`;
     // o backend grava como último evento da órfã o instante em que a morte
     // foi percebida, não o último sinal real: dizer "sem sinal há" mentiria
-    if (e.status === 'orfa') return `comunicação perdida há ${formatar(e.desde_segundos)}`;
+    if (e.status === 'orfa') return `sem comunicação há ${formatar(e.desde_segundos)}`;
     return formatar(e.duracao_segundos);
   }
 
