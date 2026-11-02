@@ -16,12 +16,10 @@ const visualRuns = new Map();
 
 async function request(method, path, body) {
   const response = await fetch('/api' + path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.detail || 'Não foi possível concluir a ação.');
-  return data;
+  return window.RespostaApi.lerResposta(response, '/api' + path);
 }
 
-function notice(message, error = false) { const target = $('#notice'); target.textContent = message; target.classList.toggle('error', error); target.hidden = false; }
+function notice(message, error = false, ciclo = false) { const target = $('#notice'); target.dataset.ciclo = ciclo ? '1' : ''; target.textContent = message; target.classList.toggle('error', error); target.hidden = false; }
 function openProject(project = null, path = '') { editingId = project?.id ?? null; $('#dialog-title').textContent = project ? 'Editar projeto' : 'Novo projeto'; $('#dialog-help').textContent = project ? 'A mudança da pasta atualiza as associações existentes.' : 'Escolha um nome curto para identificar a sala.'; $('#project-name').value = project?.nome ?? ''; $('#project-path').value = path || project?.caminho_local || ''; $('#project-dialog').showModal(); $('#project-name').focus(); }
 
 function visualId(value) {
@@ -70,6 +68,7 @@ function renderPendencias() {
   box.hidden = false;
 }
 
+function abreviar(texto) { return window.EscritorioPixel?.logica?.abreviarRotulo ? window.EscritorioPixel.logica.abreviarRotulo(texto) : texto; }
 function osTexto(run) { return [run.os_id, run.os_estado].filter(Boolean).join(' · '); }
 
 function renderRoom() {
@@ -85,7 +84,7 @@ function renderRoom() {
   const room = $('#office-room');
   if (viewMode === 'panel') {
     if (window.EscritorioPixel?.montado()) window.EscritorioPixel.destruir();
-    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>OS</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td>${esc(run.rotulo || run.tipo)}</td><td>${esc(osTexto(run))}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}${run.esperando_permissao ? ' · esperando permissão' : ''}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
+    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>OS</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td title="${esc(run.rotulo || run.tipo)}">${esc(abreviar(run.rotulo || run.tipo))}</td><td>${esc(osTexto(run))}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}${run.esperando_permissao ? ' · esperando permissão' : ''}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
     return;
   }
   const data = officeData();
@@ -119,7 +118,7 @@ function renderProjects() {
   $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
 }
 
-async function refresh() { try { [projects, { sessoes: sessions }, dashboard, manifest, pendencias] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto'), request('GET', '/pendencias')]); renderPendencias(); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true); } }
+async function refresh() { try { [projects, { sessoes: sessions }, dashboard, manifest, pendencias] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto'), request('GET', '/pendencias')]); renderPendencias(); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; if ($('#notice').dataset.ciclo) $('#notice').hidden = true; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true, true); } }
 document.addEventListener('click', (event) => { const button = event.target.closest('[data-view]'); if (!button) return; if (button.dataset.view === 'projects') window.location.assign('/projetos'); });
 $('#new-project').addEventListener('click', () => openProject());
 $('#show-archived').addEventListener('change', renderProjects);

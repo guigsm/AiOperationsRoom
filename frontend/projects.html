@@ -9,5 +9,6 @@
     <section class="panel"><div class="section-head"><div><h2>Projetos cadastrados <span id="project-count" class="count">0</span></h2><p>Mapeie a pasta aberta no VS Code para que o Operations Room associe as sessões recebidas ao seu projeto. Ele identifica o caminho local de cada sessão e atualiza os status a cada 4 segundos.</p></div><label class="toggle"><input id="show-archived" type="checkbox"> Mostrar arquivados</label></div><div id="project-list" class="list"></div></section>
   </main>
   <dialog id="project-dialog" aria-labelledby="dialog-title"><form id="project-form"><h2 id="dialog-title">Projeto</h2><p id="dialog-help" class="dialog-help"></p><label>Nome do projeto<input id="project-name" name="nome" required maxlength="120" autocomplete="off"></label><label>Pasta local<input id="project-path" name="caminho_local" required autocomplete="off" spellcheck="false"></label><p class="hint">Use um caminho absoluto. Pastas dentro desta pasta também serão associadas.</p><div class="dialog-actions"><button id="cancel-dialog" type="button" class="secondary">Cancelar</button><button class="primary" type="submit">Salvar</button></div></form></dialog>
+  <script src="/static/resposta.js" defer></script>
   <script src="/static/projects.js" defer></script>
 </body></html>

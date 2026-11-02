@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import functools
+import logging
 import sqlite3
 from contextlib import asynccontextmanager
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.config import FRONTEND
 from backend.db import connect, init_db
-from backend.events import ingest
+from backend.events import ingest as _ingest
 from backend import manifest as manifesto
 from backend import pendencias as filas_mod
 from backend import projects
@@ -41,6 +42,29 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="AI Operations Room", lifespan=lifespan)
+log = logging.getLogger("uvicorn.error")
+
+
+def ingest(con: sqlite3.Connection) -> int:
+    """Ingestão em melhor esforço: banco travado por outro processo não derruba a rota, que serve o já gravado."""
+    try:
+        return _ingest(con)
+    except sqlite3.OperationalError as exc:
+        con.rollback()
+        log.warning("ingest adiada: %s", exc)
+        return 0
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def _banco_ocupado(_request: Request, exc: sqlite3.OperationalError) -> JSONResponse:
+    log.warning("banco indisponível: %s", exc)
+    return JSONResponse({"detail": "Banco ocupado; tente de novo em instantes."}, status_code=503)
+
+
+@app.exception_handler(Exception)
+async def _erro_interno(request: Request, exc: Exception) -> JSONResponse:
+    log.error("erro em %s", request.url.path, exc_info=exc)
+    return JSONResponse({"detail": "Erro interno do servidor."}, status_code=500)
 
 
 @app.get("/api/health")

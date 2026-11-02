@@ -761,7 +761,7 @@
   const logica = {
     P, SW, SH, POSES, ESTILOS, CABECAS, COR_FIXA, CLASSE_VAR, PESOS, X,
     mapaPessoa, aparencia, compilar, planejarSala, criarGrade, rota, sortearZona, escolherVaga,
-    prepararSalas, agruparPorFrente, pintarSala, hash,
+    prepararSalas, agruparPorFrente, pintarSala, hash, abreviarRotulo,
     definirFocoMesa: (ligado) => { focoMesa = Boolean(ligado); },
   };
 
@@ -774,6 +774,14 @@
   const PLACA_MAX = 99; // unidades: duas placas vizinhas nunca se encostam
   const ROTULOS = { principal: 'Claude principal', desconhecido: 'agente desconhecido' };
   const rotulo = (tipo, e) => (e && e.rotulo) || ROTULOS[tipo] || tipo || '?'; // e.rotulo: cargo/OS do título do chat
+  // Cargo abreviado na placa; o rótulo completo vai no tooltip. Sem cargo reconhecido, fica como está.
+  const CARGOS_ABREV = { gerente: 'G.', executor: 'Ex.', diretoria: 'Dir.', secretaria: 'Sec.', 'plantão': 'Pl.', plantao: 'Pl.', assistente: 'As.' };
+  function abreviarRotulo(texto) {
+    const s = String(texto === null || texto === undefined ? '' : texto);
+    const m = /^(\S+)(\s+·\s+.*)$/.exec(s);
+    const abrev = m && CARGOS_ABREV[m[1].toLowerCase()];
+    return abrev ? `${abrev}${m[2]}` : s;
+  }
   const esc = (v) =>
     String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const reduzido = () => raiz.matchMedia && raiz.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1127,8 +1135,9 @@
     cracha.innerHTML = `<rect class="cracha-fundo" x="-6.5" y="-5.5" width="13" height="11" rx="2"/>${glifoDe(e.tipo_agente)}`;
     placa.appendChild(cracha);
     const nome = svgEl('text', { x: -24, y: 10.5 }, 'nome');
-    nome.textContent = rotulo(e.tipo_agente, e);
+    nome.textContent = abreviarRotulo(rotulo(e.tipo_agente, e));
     placa.appendChild(nome);
+    placa.appendChild(svgEl('title', {})).textContent = rotulo(e.tipo_agente, e);
     el.appendChild(placa);
     el.appendChild(svgEl('text', { x: 0, y: 28, 'text-anchor': 'middle' }, 'tempo')).textContent = tempoDe(e);
 
@@ -1188,6 +1197,8 @@
     ent.el.setAttribute('class', classes.join(' '));
     ent.el.setAttribute('aria-label', `${rotulo(e.tipo_agente, e)}: ${e.status}${e.esperando_permissao ? ', esperando permissão' : ''}`);
     ent.el.querySelector('.tempo').textContent = tempoDe(e);
+    const dica = ent.el.querySelector('.pp-placa title');
+    if (dica) dica.textContent = rotulo(e.tipo_agente, e);
     if (antes === e.status) return;
     // mudou de estado: decide logo para onde vai. Quem encerrou ou ficou
     // órfão sai da mesa para a convivência; os outros só reconsideram.
