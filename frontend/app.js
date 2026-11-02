@@ -2,13 +2,12 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[char]));
-const states = { trabalhando: 'Trabalhando', delegando: 'Delegando', aguardando: 'Aguardando', ocioso: 'Ocioso', concluida: 'Concluída', orfa: 'Órfã' };
+const states = { trabalhando: 'Trabalhando', delegando: 'Delegando', aguardando: 'Aguardando', ocioso: 'Ocioso', concluida: 'Concluída', orfa: 'Comunicação perdida' };
 let projects = [];
 let sessions = [];
 let dashboard = { execucoes: [], resumo: {} };
 let editingId = null;
 let manifest = { ativo: false };
-let dependeAberto = null;
 let pendencias = { pendencias: { total: 0, por_tipo: [] }, agentes: [] };
 const tiposPendencia = { pode: 'Pode', vai: 'Vai', cartao: 'Cartão a clicar', 'abrir-chat': 'Abrir chat', arquivar: 'Arquivar', permissao: 'Permissão', decisao: 'Decisão', conferir: 'Conferir', outro: 'Outros' };
 let selected = null;
@@ -58,28 +57,6 @@ function officeData() {
   return { salas: [...rooms.values()], frentes: manifest.ativo ? (dashboard.frentes || []) : [] };
 }
 
-function renderPendencias() {
-  const box = $('#depende');
-  const grupos = pendencias.pendencias?.por_tipo || [];
-  const esperando = (pendencias.agentes || []).filter((agent) => agent.esperando_permissao);
-  if (!grupos.length && !esperando.length) { box.hidden = true; box.innerHTML = ''; return; }
-  const total = (pendencias.pendencias?.total || 0) + esperando.length;
-  if (dependeAberto === null) dependeAberto = DependeEstado.lerAberto(armazemLocal());
-  const aberto = dependeAberto;
-  const permissoes = esperando.length ? `<div class="depende-grupo permissao"><h3>Esperando permissão <span class="count">${esperando.length}</span></h3><ul>${esperando.map((agent) => `<li><strong>${esc(agent.personagem || 'Agente')}</strong><span>${esc(agent.projeto || '')}</span><small>responder no app do chat</small></li>`).join('')}</ul></div>` : '';
-  box.innerHTML = `<div class="depende-titulo"><h2>Depende de você <span class="count">${total}</span></h2><button type="button" class="botao-mini" id="depende-alternar" aria-expanded="${aberto}" aria-controls="depende-corpo">${aberto ? 'Ocultar' : 'Exibir'}</button></div><div class="depende-grupos" id="depende-corpo"${aberto ? '' : ' hidden'}>${permissoes}${grupos.map((grupo) => `<div class="depende-grupo"><h3>${esc(tiposPendencia[grupo.tipo] || grupo.tipo)} <span class="count">${grupo.itens.length}</span></h3><ul>${grupo.itens.map((item) => `<li><strong>${esc(item.projeto)}</strong><span>${esc(item.pedido)}</span><small>${esc(item.onde ? `onde responder: ${item.onde}` : '')}${item.desde ? ` · desde ${esc(item.desde)}` : ''}</small></li>`).join('')}</ul></div>`).join('')}</div>`;
-  $('#depende-alternar').addEventListener('click', alternarDepende);
-  box.hidden = false;
-}
-function armazemLocal() { try { return window.localStorage; } catch (erro) { return null; } }
-$('#office-summary').addEventListener('click', (event) => { if (event.target.closest('[data-depende]') && !$('#depende').hidden) alternarDepende(); });
-$('#office-summary').addEventListener('keydown', (event) => { if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-depende]') && !$('#depende').hidden) { event.preventDefault(); alternarDepende(); } });
-function alternarDepende() {
-  dependeAberto = !dependeAberto;
-  DependeEstado.gravarAberto(dependeAberto, armazemLocal());
-  renderPendencias();
-}
-
 function totalPendencias() { return (pendencias.pendencias?.total || 0) + (pendencias.agentes || []).filter((agent) => agent.esperando_permissao).length; }
 function pendenciasDaSala(projetoId) {
   if (!projetoId) return { itens: [], permissao: [] };
@@ -102,7 +79,7 @@ function renderRoom() {
     ['rosa', 'Depende de você', totalPendencias()],
     ['roxo', 'Projetos ativos', new Set(dashboard.execucoes.filter((run) => ['trabalhando', 'delegando', 'aguardando'].includes(run.estado) && run.projeto_id).map((run) => run.projeto_id)).size],
   ];
-  $('#office-summary').innerHTML = metrics.map(([color, label, value]) => `<article class="kpi"${label === 'Depende de você' ? ' data-depende role="button" tabindex="0"' : ''}><span class="kpi-rotulo"><i class="ponto ${color}"></i>${label}</span><strong class="kpi-valor">${value}</strong></article>`).join('');
+  $('#office-summary').innerHTML = metrics.map(([color, label, value]) => `<article class="kpi"><span class="kpi-rotulo"><i class="ponto ${color}"></i>${label}</span><strong class="kpi-valor">${value}</strong></article>`).join('');
   $('#operation-bar').innerHTML = `<span class="ao-vivo"><i></i>Ao vivo</span><span>${counts.sessoes_ativas || 0} sessão(ões) ativa(s)</span><span class="sep">·</span><span>${counts.execucoes_na_janela || 0} execução(ões) nas últimas ${dashboard.horas || 6} h</span><span class="meta-fim">atualiza a cada 4 s</span>`;
   const room = $('#office-room');
   if (viewMode === 'panel') {
@@ -141,13 +118,89 @@ function renderProjects() {
   $('#project-list').innerHTML = visible.length ? visible.map((project) => `<div class="row ${project.arquivado ? 'archived' : ''}"><div class="row-main"><strong>${esc(project.nome)} ${project.arquivado ? '<span class="badge">Arquivado</span>' : ''}</strong><span class="path">${esc(project.caminho_local)}</span></div><div class="actions" ${manifest.ativo ? 'hidden' : ''}><button data-action="edit" data-id="${project.id}">Editar</button><button data-action="archive" data-id="${project.id}">${project.arquivado ? 'Desarquivar' : 'Arquivar'}</button><button class="danger" data-action="delete" data-id="${project.id}">Remover</button></div></div>`).join('') : '<p class="empty">Nenhum projeto nesta lista.</p>';
 }
 
-async function refresh() { try { [projects, { sessoes: sessions }, dashboard, manifest, pendencias] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto'), request('GET', '/pendencias')]); renderPendencias(); renderRoom(); renderProjects(); $('#connection').textContent = 'Ao vivo'; if ($('#notice').dataset.ciclo) $('#notice').hidden = true; } catch (error) { $('#connection').textContent = 'Sem conexão'; notice(error.message, true, true); } }
-document.addEventListener('click', (event) => { const button = event.target.closest('[data-view]'); if (!button) return; if (button.dataset.view === 'projects') window.location.assign('/projetos'); });
+let atualizando = false;
+let refazer = false;
+let falhas = 0;
+let relogio = null;
+const INTERVALO = 4000;
+const RECUO_MAX = 30000;
+// Próximo ciclo só depois do anterior terminar; com falha (503, rede) o intervalo dobra até 30 s.
+function proximoCiclo() { return Math.min(RECUO_MAX, INTERVALO * 2 ** Math.min(falhas, 4)); }
+async function refresh() {
+  if (atualizando) { refazer = true; return; }
+  atualizando = true;
+  clearTimeout(relogio);
+  try {
+    [projects, { sessoes: sessions }, dashboard, manifest, pendencias] = await Promise.all([request('GET', '/projetos'), request('GET', '/sessoes'), request('GET', `/painel?horas=${$('#history-period').value}&convivencia=12`), request('GET', '/manifesto'), request('GET', '/pendencias')]);
+    falhas = 0;
+    renderRoom(); renderProjects();
+    $('#connection').textContent = 'Ao vivo';
+    if ($('#notice').dataset.ciclo) $('#notice').hidden = true;
+  } catch (error) {
+    falhas += 1;
+    $('#connection').textContent = 'Sem conexão';
+    notice(error.message, true, true);
+  } finally {
+    atualizando = false;
+    const deNovo = refazer;
+    refazer = false;
+    relogio = setTimeout(refresh, deNovo ? 0 : proximoCiclo());
+  }
+}
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('a[href="/projetos"]');
+  const button = event.target.closest('[data-view]');
+  if (!link && !(button && button.dataset.view === 'projects')) return;
+  notice('Carregando Projetos…');
+  document.body.setAttribute('aria-busy', 'true');
+  if (!link) window.location.assign('/projetos');
+});
 $('#new-project').addEventListener('click', () => openProject());
 $('#show-archived').addEventListener('change', renderProjects);
 $('#cancel-dialog').addEventListener('click', () => $('#project-dialog').close());
 $('#project-form').addEventListener('submit', async (event) => { event.preventDefault(); try { await request(editingId ? 'PUT' : 'POST', editingId ? `/projetos/${editingId}` : '/projetos', { nome: $('#project-name').value.trim(), caminho_local: $('#project-path').value.trim() }); $('#project-dialog').close(); await refresh(); notice('Projeto salvo.'); } catch (error) { notice(error.message, true); } });
+// Aviso do "!" (comunicação perdida): balão na própria tela, sem modal; fecha com Esc e ao clicar fora.
+let aviso = null;
+let eventoAbertura = null;
+function fecharAviso() { if (aviso) { aviso.remove(); aviso = null; } }
+async function copiarTexto(texto) {
+  try { await navigator.clipboard.writeText(texto); return true; } catch (erro) { /* sem permissão: tenta o método antigo */ }
+  const area = document.createElement('textarea');
+  area.value = texto; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+  document.body.appendChild(area); area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (erro) { ok = false; }
+  area.remove();
+  return ok;
+}
+function abrirAviso(run, event) {
+  fecharAviso();
+  const C = window.Comunicacao;
+  const comando = C.comandoRetomar(run);
+  aviso = document.createElement('div');
+  aviso.id = 'aviso-comunicacao';
+  aviso.className = 'aviso-com';
+  aviso.setAttribute('role', 'dialog');
+  aviso.setAttribute('aria-label', C.TITULO);
+  aviso.tabIndex = -1;
+  aviso.innerHTML = `<h3>${esc(C.TITULO)}</h3><p>${esc(C.PORQUE)}</p><p>${esc(C.RETOMAR_APP)}</p>${comando ? `<p>${esc(C.RETOMAR_TERMINAL)}</p><code>${esc(comando)}</code><div class="aviso-acoes"><button type="button" class="botao-mini" data-copiar>Copiar comando</button><span class="aviso-ok" role="status"></span></div>` : ''}<small>${esc(C.NOTA)}</small>`;
+  document.body.appendChild(aviso);
+  const caixa = aviso.getBoundingClientRect();
+  aviso.style.left = `${Math.max(8, Math.min(event.clientX + 12, window.innerWidth - caixa.width - 8))}px`;
+  aviso.style.top = `${Math.max(8, Math.min(event.clientY + 12, window.innerHeight - caixa.height - 8))}px`;
+  eventoAbertura = event;
+  aviso.focus({ preventScroll: true });
+  const botao = aviso.querySelector('[data-copiar]');
+  if (botao) botao.addEventListener('click', async () => { aviso.querySelector('.aviso-ok').textContent = (await copiarTexto(comando)) ? 'Copiado.' : 'Não foi possível copiar; selecione o comando.'; });
+}
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') fecharAviso(); });
+document.addEventListener('click', (event) => { if (aviso && event !== eventoAbertura && !aviso.contains(event.target)) fecharAviso(); });
 $('#office-room').addEventListener('click', (event) => {
+  const alerta = event.target.closest('.pp-alerta');
+  if (alerta) {
+    const dono = visualRuns.get(alerta.closest('.pessoa')?.dataset.id);
+    if (dono) return abrirAviso(dono, event);
+  }
   const person = event.target.closest('.pessoa');
   const run = person && visualRuns.get(person.dataset.id);
   if (run) return selectSession(run.session_id).catch((error) => notice(error.message, true));
@@ -171,4 +224,3 @@ document.querySelectorAll('.alternador .botao-mini').forEach((button) => button.
 $('#history-period').addEventListener('change', refresh);
 $('#show-route').addEventListener('change', renderRoom);
 refresh();
-setInterval(refresh, 4000);

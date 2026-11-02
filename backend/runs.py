@@ -60,8 +60,24 @@ def _active_children(con: sqlite3.Connection, session_id: str) -> int:
     ).fetchone()[0]
 
 
+def _retomar_orfa(con: sqlite3.Connection, event: dict) -> None:
+    """Qualquer evento novo do chat tira a execução principal de 'orfa' (comunicação perdida).
+
+    Volta como 'aguardando'; a reconciliação reclassifica em seguida (ativo ou ocioso). Evento mais antigo que a
+    detecção (ingestão atrasada) não retoma nada.
+    """
+    when = _value(event, "t")
+    con.execute(
+        "UPDATE execucao SET estado = 'aguardando', origem_encerramento = NULL, atualizado_em = ? "
+        "WHERE chave = ? AND estado = 'orfa' AND atualizado_em <= ?",
+        (when, main_key(event["session_id"]), when),
+    )
+
+
 def apply(con: sqlite3.Connection, event: dict) -> None:
     name = event["evento"]
+    if name != "SessionEnd":
+        _retomar_orfa(con, event)
     if name == "SessionStart":
         _set_main(con, event, "aguardando")
     elif name == "UserPromptSubmit":

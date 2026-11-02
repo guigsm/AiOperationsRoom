@@ -32,14 +32,17 @@ test('200 que não é JSON também é erro com status e caminho', async () => {
     (erro) => /^200 \/api\/painel/.test(erro.message));
 });
 
-test('legendas: cargos viram abreviações e o resto fica como está', () => {
-  assert.equal(abreviarRotulo('Gerente · Sala'), 'G. · Sala');
-  assert.equal(abreviarRotulo('Executor · SAL-06'), 'Ex. · SAL-06');
-  assert.equal(abreviarRotulo('Diretoria · Sede'), 'Dir. · Sede');
-  assert.equal(abreviarRotulo('Secretaria · Sede'), 'Sec. · Sede');
-  assert.equal(abreviarRotulo('Plantão · Deploy'), 'Pl. · Deploy');
-  assert.equal(abreviarRotulo('Assistente · Sala'), 'As. · Sala');
+test('legendas: cargo em três letras, espaço e projeto/OS, sem o ponto médio', () => {
+  assert.equal(abreviarRotulo('Gerente · Audição'), 'Ger. Audição');
+  assert.equal(abreviarRotulo('Gerente · Sala'), 'Ger. Sala');
+  assert.equal(abreviarRotulo('Executor · SAL-06'), 'Exe. SAL-06');
+  assert.equal(abreviarRotulo('Diretoria · Sede'), 'Dir. Sede');
+  assert.equal(abreviarRotulo('Secretaria · Sede'), 'Sec. Sede');
+  assert.equal(abreviarRotulo('Plantão · Deploy'), 'Pla. Deploy');
+  assert.equal(abreviarRotulo('Plantao · Deploy'), 'Pla. Deploy');
+  assert.equal(abreviarRotulo('Assistente · Sala'), 'Ass. Sala');
   assert.equal(abreviarRotulo('Claude principal'), 'Claude principal');
   assert.equal(abreviarRotulo('Explore'), 'Explore');
+  assert.equal(abreviarRotulo('Faxineiro · Sala'), 'Faxineiro · Sala');
   assert.equal(abreviarRotulo(null), '');
 });

@@ -298,3 +298,8 @@ test('sino cabe na zona trabalho, entre a estante e o relógio', () => {
   const x0 = 90; // arte: estante termina em 87 e o relógio começa em 103
   assert.ok(x0 > 87 && x0 + 9 < 103);
 });
+
+test('opcoesRolagem: suave por padrão e direta com "reduzir movimento"', () => {
+  assert.deepEqual(px.opcoesRolagem(false), { block: 'nearest', behavior: 'smooth' });
+  assert.deepEqual(px.opcoesRolagem(true), { block: 'nearest', behavior: 'auto' });
+});

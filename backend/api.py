@@ -68,7 +68,9 @@ async def _erro_interno(request: Request, exc: Exception) -> JSONResponse:
 
 
 @app.get("/api/health")
-def health() -> dict:
+async def health() -> dict:
+    # async de propósito: roda no laço de eventos e não disputa as threads (as demais rotas são síncronas e,
+    # com o banco ocupado, podem prender todas as 40 do pool); assim o health responde mesmo com o pool cheio.
     return {"ok": True}
 
 

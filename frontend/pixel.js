@@ -19,7 +19,7 @@
      último evento gravado; ao vencer, some devagar onde estiver. Quem decide
      o prazo é definido pela API. Na órfã, o prazo conta de quando a morte foi
      percebida.
-   - Órfã vai para a convivência e para ali, com o balão "!".
+   - Comunicação perdida (órfã) vai para a convivência e para ali, com o balão "!".
 
    Nada de ação específica ("lendo arquivo", "pedindo permissão"): os seis
    hooks não entregam isso (docs/AGENTES_HOOKS.md). Digitar = trabalhando
@@ -777,6 +777,11 @@
     };
   }
 
+  /* Rolagem suave até a área aberta pelo sino; com "reduzir movimento" vai direto. */
+  function opcoesRolagem(reduzir) {
+    return { block: 'nearest', behavior: reduzir ? 'auto' : 'smooth' };
+  }
+
   const CHAVE_OCULTO = 'sala.pendencias.oculto.';
   /* localStorage pode faltar ou lançar (janela privada, dados bloqueados): a tela funciona sem ele. */
   function lerOculto(chave, armazem) {
@@ -819,7 +824,7 @@
   }
 
   const logica = {
-    estadoSino, lerOculto, gravarOculto, pintarSino, SINO,
+    estadoSino, lerOculto, gravarOculto, pintarSino, SINO, opcoesRolagem,
     P, SW, SH, POSES, ESTILOS, CABECAS, COR_FIXA, CLASSE_VAR, PESOS, X,
     mapaPessoa, aparencia, compilar, planejarSala, criarGrade, rota, sortearZona, escolherVaga,
     prepararSalas, agruparPorFrente, pintarSala, hash, abreviarRotulo,
@@ -836,12 +841,12 @@
   const ROTULOS = { principal: 'Claude principal', desconhecido: 'agente desconhecido' };
   const rotulo = (tipo, e) => (e && e.rotulo) || ROTULOS[tipo] || tipo || '?'; // e.rotulo: cargo/OS do título do chat
   // Cargo abreviado na placa; o rótulo completo vai no tooltip. Sem cargo reconhecido, fica como está.
-  const CARGOS_ABREV = { gerente: 'G.', executor: 'Ex.', diretoria: 'Dir.', secretaria: 'Sec.', 'plantão': 'Pl.', plantao: 'Pl.', assistente: 'As.' };
+  const CARGOS_ABREV = { gerente: 'Ger.', executor: 'Exe.', diretoria: 'Dir.', secretaria: 'Sec.', 'plantão': 'Pla.', plantao: 'Pla.', assistente: 'Ass.' };
   function abreviarRotulo(texto) {
     const s = String(texto === null || texto === undefined ? '' : texto);
-    const m = /^(\S+)(\s+·\s+.*)$/.exec(s);
+    const m = /^(\S+)\s+·\s+(.*)$/.exec(s);
     const abrev = m && CARGOS_ABREV[m[1].toLowerCase()];
-    return abrev ? `${abrev}${m[2]}` : s;
+    return abrev ? `${abrev} ${m[2]}` : s;
   }
   const esc = (v) =>
     String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -1055,6 +1060,7 @@
     botao.addEventListener('click', () => {
       sala.aberta = !sala.aberta;
       if (ultimosDados) atualizar(ultimosDados);
+      if (sala.aberta) irParaArea(sala);
     });
     const painel = svgEl('foreignObject', { x: 0, y: 0, width: sala.plano.largura, height: 0 }, 'pp-pend-fo');
     painel.style.display = 'none';
@@ -1072,13 +1078,22 @@
     sala.painel = painel;
   }
 
+  // Ao exibir pelo sino, a página desliza até a área e o foco vai para o título dela; ao ocultar, não rola.
+  function irParaArea(sala) {
+    const alvo = sala.painel;
+    if (!alvo || alvo.style.display === 'none') return;
+    if (alvo.scrollIntoView) alvo.scrollIntoView(opcoesRolagem(reduzido()));
+    const titulo = alvo.querySelector('.pp-pend-titulo');
+    if (titulo && titulo.focus) titulo.focus({ preventScroll: true });
+  }
+
   function htmlPendencias(sala, est, oculto) {
     const id = idPendencia(sala);
     const nome = sala.dados.nome;
     const itens = est.permissao.map((a) => `<li class="perm"><span class="pp-pend-tipo">Permissão</span><span class="pp-pend-pedido"><b>${esc(a.personagem)}</b> está esperando permissão</span><small>responder no app do chat</small></li>`)
       .concat(est.itens.map((i) => `<li><span class="pp-pend-tipo">${esc(i.tipoNome || i.tipo)}</span><span class="pp-pend-pedido">${esc(i.pedido)}</span><small>${esc([i.onde && `onde responder: ${i.onde}`, i.desde && `desde ${i.desde}`].filter(Boolean).join(' · '))}</small></li>`));
     const corpo = est.total ? `<ul class="pp-pend-lista">${itens.join('')}</ul>` : '<p class="pp-pend-vazio">Nada pendente.</p>';
-    return `<div xmlns="${XHTML}" class="pp-pend" id="${id}" role="region" aria-label="Depende de você em ${esc(nome)}"><div class="pp-pend-topo"><strong>Depende de você</strong><span class="pp-pend-n">${est.total}</span><span class="pp-pend-proj">${esc(nome)}</span><button type="button" class="pp-pend-alterna" aria-expanded="${oculto ? 'false' : 'true'}" aria-controls="${id}-texto">${oculto ? 'Exibir texto' : 'Ocultar texto'}</button></div><div class="pp-pend-texto" id="${id}-texto"${oculto ? ' hidden' : ''}>${corpo}</div></div>`;
+    return `<div xmlns="${XHTML}" class="pp-pend" id="${id}" role="region" aria-label="Depende de você em ${esc(nome)}"><div class="pp-pend-topo"><strong class="pp-pend-titulo" tabindex="-1">Depende de você</strong><span class="pp-pend-n">${est.total}</span><span class="pp-pend-proj">${esc(nome)}</span><button type="button" class="pp-pend-alterna" aria-expanded="${oculto ? 'false' : 'true'}" aria-controls="${id}-texto">${oculto ? 'Exibir texto' : 'Ocultar texto'}</button></div><div class="pp-pend-texto" id="${id}-texto"${oculto ? ' hidden' : ''}>${corpo}</div></div>`;
   }
 
   function sincronizarPendencias(sala, info) {
@@ -1099,6 +1114,9 @@
     if (!sala.aberta) {
       painel.style.display = 'none';
       sala.extra = 0;
+      // sem isto, reabrir com o mesmo conteúdo pulava a medição e a área ficava com altura 0,
+      // colada ao cabeçalho da sala de baixo
+      sala.assinaturaPainel = null;
       return;
     }
     const oculto = sala.oculto === undefined ? lerOculto(sala.chave, armazem()) : sala.oculto;
@@ -1187,7 +1205,7 @@
       n.delegando && `${n.delegando} delegando`,
       n.aguardando && `${n.aguardando} aguardando`,
       n.ocioso && `${n.ocioso} ocioso(s)`,
-      n.orfa && `${n.orfa} órfã(s)`,
+      n.orfa && `${n.orfa} com comunicação perdida`,
       n.concluida && `${n.concluida} encerrada(s) · até 12 h`,
     ].filter(Boolean);
     sala.estatico.querySelector('[data-papel="resumo"]').textContent = partes.join(' · ') || 'sala vazia';
@@ -1227,7 +1245,7 @@
     if (e.status === 'ocioso') return `ocioso há ${formatar(e.ocioso_segundos ?? e.desde_segundos)}`;
     // o backend grava como último evento da órfã o instante em que a morte
     // foi percebida, não o último sinal real: dizer "sem sinal há" mentiria
-    if (e.status === 'orfa') return `detectada há ${formatar(e.desde_segundos)}`;
+    if (e.status === 'orfa') return `comunicação perdida há ${formatar(e.desde_segundos)}`;
     return formatar(e.duracao_segundos);
   }
 

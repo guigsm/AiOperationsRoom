@@ -13,9 +13,30 @@ from backend import runs
 _lock = threading.Lock()
 
 
+def _sem_novidade(con: sqlite3.Connection, path) -> bool:
+    """True quando o arquivo é o mesmo já lido até o fim: nada a gravar, então nem toma o bloqueio de escrita.
+
+    Leitura pura (sem BEGIN IMMEDIATE): as rotas chamam ingest a cada ciclo da tela e quase sempre não há evento novo.
+    """
+    try:
+        offset_row = con.execute("SELECT valor FROM ingestao WHERE chave = 'events_offset'").fetchone()
+        prefix_row = con.execute("SELECT valor FROM ingestao WHERE chave = 'events_prefix'").fetchone()
+        if not offset_row or not prefix_row:
+            return False
+        offset = int(offset_row["valor"])
+        if not offset or path.stat().st_size != offset:
+            return False
+        with path.open("rb") as stream:
+            return hashlib.sha256(stream.read(min(offset, 4096))).hexdigest() == prefix_row["valor"]
+    except (OSError, sqlite3.Error):
+        return False
+
+
 def ingest(con: sqlite3.Connection) -> int:
     path = events_path()
     if not path.exists():
+        return 0
+    if _sem_novidade(con, path):
         return 0
     with _lock:
         # Serialize the cursor across server processes as well as threads.
