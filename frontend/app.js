@@ -2,7 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[char]));
-const states = { trabalhando: 'Trabalhando', delegando: 'Delegando', aguardando: 'Aguardando', ocioso: 'Ocioso', concluida: 'Concluída', orfa: 'Comunicação perdida' };
+const states = { trabalhando: 'Trabalhando', delegando: 'Delegando', aguardando: 'Aguardando', ocioso: 'Ocioso', concluida: 'Concluída', orfa: 'Sem sinal' };
 let projects = [];
 let sessions = [];
 let dashboard = { execucoes: [], resumo: {} };

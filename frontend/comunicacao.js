@@ -12,7 +12,7 @@
     return `cd "${pasta.trim()}" && ${retomar}`;
   }
 
-  const TITULO = 'Comunicação perdida';
+  const TITULO = 'Sem sinal';
   const PORQUE = 'A sala parou de receber sinais deste chat, por isso ele aparece com “!”.';
   const RETOMAR_APP = 'Para retomar: abra o chat no app do Claude e mande uma mensagem. Qualquer evento novo do chat o traz de volta.';
   const RETOMAR_TERMINAL = 'Chat de terminal: rode, na pasta do chat:';

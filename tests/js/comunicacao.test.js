@@ -30,7 +30,7 @@ test('session_id fora do padrão ou pasta com aspas não gera comando perigoso',
 
 test('textos usam o termo novo e não falam em órfã', () => {
   const tudo = [C.TITULO, C.PORQUE, C.RETOMAR_APP, C.RETOMAR_TERMINAL, C.NOTA].join(' ');
-  assert.equal(C.TITULO, 'Comunicação perdida');
+  assert.equal(C.TITULO, 'Sem sinal');
   assert.ok(!/órf/i.test(tudo));
   assert.match(C.RETOMAR_APP, /mande uma mensagem/);
 });
