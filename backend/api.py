@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
+import os
 import sqlite3
 from contextlib import asynccontextmanager
 from collections.abc import Iterator
@@ -12,8 +14,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+from backend import registro
 from backend.config import FRONTEND
 from backend.db import connect, init_db
 from backend.events import ingest as _ingest
@@ -35,10 +39,40 @@ def database() -> Iterator[sqlite3.Connection]:
         yield con
 
 
+def _primeira_ingestao() -> None:
+    try:
+        with connect() as con:
+            ingest(con)
+    except sqlite3.Error as exc:
+        log.warning("primeira ingestão adiada: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """Abre o banco, deixa a porta escutar e só então faz a primeira ingestão (fila grande não segura a porta).
+
+    `/api/health` diz `pronta: false` até a ingestão terminar. Só o `serve` (que põe a porta no ambiente) se registra
+    em sala.json; teste e importação do app não tocam nesse arquivo.
+    """
+    _app.state.pronta = False
     init_db()
-    yield
+    porta = os.environ.get(registro.PORT_ENV)
+    porta = int(porta) if porta and porta.isdigit() else None
+
+    async def _aquecer() -> None:
+        await run_in_threadpool(_primeira_ingestao)
+        _app.state.pronta = True
+        log.info("sala pronta")
+
+    tarefa = asyncio.create_task(_aquecer())
+    if porta:
+        registro.registrar(porta)
+    try:
+        yield
+    finally:
+        tarefa.cancel()
+        if porta:
+            registro.remover()
 
 
 app = FastAPI(title="AI Operations Room", lifespan=lifespan)
@@ -71,7 +105,13 @@ async def _erro_interno(request: Request, exc: Exception) -> JSONResponse:
 async def health() -> dict:
     # async de propósito: roda no laço de eventos e não disputa as threads (as demais rotas são síncronas e,
     # com o banco ocupado, podem prender todas as 40 do pool); assim o health responde mesmo com o pool cheio.
-    return {"ok": True}
+    return {"ok": True, "versao": registro.VERSAO, "pronta": bool(getattr(app.state, "pronta", False))}
+
+
+@app.get("/api/classica")
+async def classica() -> dict:
+    """Porta da InToca Sala (Clássica), lida de ~/.intoca/sala.json; sem registro, `porta` é null e o botão some."""
+    return {"porta": registro.classica_porta()}
 
 
 def _scope(con: sqlite3.Connection):

@@ -131,9 +131,16 @@ def seed_demo(path: Path) -> None:
     print(f"Dados fictícios criados em {path}")
 
 
-def serve(data_dir: str | None, port: int = 8765) -> None:
+def serve(data_dir: str | None, port: int | None = None) -> None:
+    """Sobe a sala em loopback. Porta: --port, depois AI_OPERATIONS_ROOM_PORT, depois 8765 (registrada em sala.json)."""
+    from backend import registro
+
     if data_dir:
         os.environ["AI_OPERATIONS_ROOM_DATA_DIR"] = data_dir
+    port = registro.porta_configurada(port)
+    os.environ[registro.PORT_ENV] = str(port)
+    # Linhas de progresso com flush: no log do painel se vê em que fase a subida está (importar, abrir a porta, ficar pronta).
+    print(f"[sala] iniciando na porta {port} (pid {os.getpid()})", flush=True)
     import uvicorn
     uvicorn.run("backend.api:app", host="127.0.0.1", port=port)
 
@@ -147,10 +154,10 @@ def main() -> int:
     demo = commands.add_parser("demo")
     demo.add_argument("--data-dir", type=Path, default=Path.home() / ".ai-operations-room-demo")
     demo.add_argument("--serve", action="store_true")
-    demo.add_argument("--port", type=int, default=8765)
+    demo.add_argument("--port", type=int)
     server = commands.add_parser("serve")
     server.add_argument("--data-dir")
-    server.add_argument("--port", type=int, default=8765)
+    server.add_argument("--port", type=int)
     args = parser.parse_args()
     if args.action == "hooks-install":
         install_hooks(args.settings)

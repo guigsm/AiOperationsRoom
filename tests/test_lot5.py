@@ -90,11 +90,12 @@ def test_state_classification_matches_fila_ts(texto, esperado):
 
 
 def test_real_sala_queue_is_readable():
-    fila = Path(r"C:\intoca\sala\ops\fila.md")
-    if not fila.is_file():
+    # A fila da sala foi fundida na do projeto InToca (DIR-31): procura nas duas e pula se nenhuma existir.
+    filas = [f for f in (Path(r"C:\intoca\plugin\ops\fila.md"), Path(r"C:\intoca\sala\ops\fila.md")) if f.is_file()]
+    if not filas:
         pytest.skip("fila da sala ausente")
-    lida = pend.ler_fila(fila.read_text(encoding="utf-8"))
-    assert {"SAL-01", "SAL-04"} <= set(lida["os"])
+    lidas = [set(pend.ler_fila(f.read_text(encoding="utf-8"))["os"]) for f in filas]
+    assert any({"SAL-01", "SAL-04"} <= ids for ids in lidas)
 
 
 # --- hook ---------------------------------------------------------------------

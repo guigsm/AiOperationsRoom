@@ -1,4 +1,45 @@
-# AI Operations Room
+# AI Operations Room · InToca
+
+> **Origem e crédito.** Este repositório é um fork de [`mewsdev/AiOperationsRoom`](https://github.com/mewsdev/AiOperationsRoom),
+> projeto de **Maria Eduarda Watanabe** (@mewsdev) sob licença MIT. Todo o mérito da ideia, da sala em pixel art e da
+> base de código é dela; o aviso de copyright e a [licença](LICENSE) originais foram mantidos. A versão InToca é a sala animada
+> da suíte InToca.
+
+## O que a versão InToca muda
+
+Mudanças pequenas e separáveis sobre o original, para a sala conviver com a InToca Sala (a versão simples, "Clássica"):
+
+- **Porta escolhida por você:** `serve --port N` ou a variável `AI_OPERATIONS_ROOM_PORT` (a flag vence a variável; padrão 8765).
+- **Registro da sala em `~/.intoca/sala.json`:** ao subir, grava `animada: {porta, pid, iniciou_em, versao}` sem apagar o resto do arquivo
+  (gravação atômica) e remove a própria entrada ao encerrar normalmente (Ctrl+C). Sala encerrada à força deixa a entrada; quem lê confere
+  o `pid` e `/api/health`.
+- **Saúde por HTTP:** `GET /api/health` devolve `{ok, versao, pronta}`. A porta abre primeiro; `pronta` vira `true` depois do banco aberto
+  e da primeira leitura da fila de eventos, que roda em segundo plano para uma fila grande não atrasar a abertura da porta.
+- **Botão "Clássica"** no cabeçalho, que abre a InToca Sala na porta registrada em `sala.json`. Sem Clássica registrada, o botão não aparece.
+- **Nome na tela:** "AI Operations Room · InToca".
+- Sala de escritório ligada a um manifesto de projetos opcional (`INTOCA_SEDE`), fila de pendências do proprietário e comunicação por
+  agente.
+
+O remoto `upstream` aponta para o repositório original. Se ele evoluir, cada mudança é avaliada e trazida à mão (`git fetch upstream`).
+A história deste fork não é reescrita.
+
+## Subida confiável no Windows
+
+Prefira o Python do ambiente virtual **direto**, sem `uv run`, com o diretório de trabalho na pasta do repositório:
+
+```powershell
+.venv\Scripts\python.exe -m backend.cli serve --port 8765
+```
+
+O `uv run` confere o ambiente a cada chamada e, numa máquina saturada (antivírus, indexador, sincronizador de nuvem logo após ligar),
+levou minutos para a porta abrir; o `.venv` direto abriu em 6 a 15 s nas mesmas condições. Não relance o comando enquanto a porta não
+abre: o processo está importando e abrindo o banco, e um segundo só atrasa o primeiro. O log mostra `[sala] iniciando…` assim que o
+processo vive e `sala pronta` ao final. `scripts/start-room.ps1` já usa o `.venv` e espera `/api/health`.
+
+Para conferir a subida do jeito que um painel faria (Node `spawn` com `shell:true`), rode
+`node scripts/prova-subida.mjs --porta 8766`: mede o tempo até a porta responder e até `pronta`, confere o `sala.json` e encerra tudo.
+Use sempre outra porta e dados temporários (o script já faz isso) para não tocar na sala em uso.
+
 
 Uma sala local para acompanhar sessões e subagentes do Claude Code. O aplicativo recebe somente metadados de hooks, mantém os dados em SQLite local e serve a interface em `127.0.0.1`.
 
@@ -76,7 +117,7 @@ Estou compartilhando também 2 agentes que eu utilizo nos meus projetos de traba
 ```powershell
 .venv\Scripts\python.exe -m pytest -q --basetemp=.test-temp
 node --check frontend/app.js
-node --test tests/js/pixel.test.js
+node --test tests/js/*.test.js
 ```
 
 Consulte [ARCHITECTURE.md](ARCHITECTURE.md), [DEVELOPMENT.md](DEVELOPMENT.md) e [HANDOFF.md](HANDOFF.md) para decisões e pontos de extensão.
