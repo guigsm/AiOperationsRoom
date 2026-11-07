@@ -20,16 +20,32 @@ def settings_path() -> Path:
     return Path.home() / ".claude" / "settings.json"
 
 
+def hook_python() -> str:
+    """Interpretador do hook: o base (não o lançador do venv, que cria um processo filho a mais). O hook só usa a stdlib."""
+    base = getattr(sys, "_base_executable", None) or sys.executable
+    return base if os.path.exists(base) else sys.executable
+
+
 def command() -> str:
-    invocation = f'"{sys.executable}" "{ROOT / "hooks" / "capture.py"}"'
-    return f"& {invocation}" if os.name == "nt" else invocation
+    """Comando do hook (INT-07): interpretador direto, isolado (-I) e sem `site` (-S), sem PowerShell.
+
+    O PowerShell e o lançador do venv somavam segundos à partida e o Claude Code cancelava o SessionEnd. No Windows o
+    comando roda no shell padrão do Claude Code (Git Bash), por isso as barras são normais.
+    """
+    exe, script = hook_python(), str(ROOT / "hooks" / "capture.py")
+    if os.name == "nt":
+        exe, script = exe.replace("\\", "/"), script.replace("\\", "/")
+    return f'"{exe}" -I -S "{script}"'
+
+
+HOOK_RE = re.compile(r'\s*(?:&\s*)?"[^"]+"(?:\s+-[A-Za-z]+)*\s+"([^"]+)"\s*')
 
 
 def _our_hook(item: dict) -> bool:
     value = item.get("command")
     if not isinstance(value, str):
         return False
-    match = re.fullmatch(r'\s*(?:&\s*)?"[^"]+"\s+"([^"]+)"\s*', value)
+    match = HOOK_RE.fullmatch(value)
     return bool(match and os.path.normcase(os.path.normpath(match.group(1))) ==
                 os.path.normcase(os.path.normpath(str(ROOT / "hooks" / "capture.py"))))
 
@@ -59,15 +75,10 @@ def install_hooks(path: Path) -> None:
             for item in group.get("hooks", []):
                 if _our_hook(item):
                     item["command"] = command()
-                    if os.name == "nt":
-                        item["shell"] = "powershell"
-                    else:
-                        item.pop("shell", None)
+                    item.pop("shell", None)  # entradas antigas rodavam em PowerShell (lento)
                     found = True
         if not found:
             hook = {"type": "command", "command": command(), "timeout": 5}
-            if os.name == "nt":
-                hook["shell"] = "powershell"
             groups.append({"hooks": [hook]})
     save_settings(path, settings)
     print(f"Hooks registrados em {path}")

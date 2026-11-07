@@ -80,17 +80,17 @@ function renderRoom() {
     ['roxo', 'Projetos ativos', new Set(dashboard.execucoes.filter((run) => ['trabalhando', 'delegando', 'aguardando'].includes(run.estado) && run.projeto_id).map((run) => run.projeto_id)).size],
   ];
   $('#office-summary').innerHTML = metrics.map(([color, label, value]) => `<article class="kpi"><span class="kpi-rotulo"><i class="ponto ${color}"></i>${label}</span><strong class="kpi-valor">${value}</strong></article>`).join('');
-  $('#operation-bar').innerHTML = `<span class="ao-vivo"><i></i>Ao vivo</span><span>${counts.sessoes_ativas || 0} sessão(ões) ativa(s)</span><span class="sep">·</span><span>${counts.execucoes_na_janela || 0} execução(ões) nas últimas ${dashboard.horas || 6} h</span><span class="meta-fim">atualiza a cada 4 s</span>`;
+  $('#operation-bar').innerHTML = `<span class="ao-vivo"><i></i>Ao vivo</span><span>${counts.sessoes_ativas || 0} chat(s) ativo(s)</span><span class="sep">·</span><span>${counts.execucoes_na_janela || 0} execução(ões) nas últimas ${dashboard.horas || 6} h</span><span class="meta-fim">atualiza a cada 4 s</span>`;
   const room = $('#office-room');
   if (viewMode === 'panel') {
     if (window.EscritorioPixel?.montado()) window.EscritorioPixel.destruir();
-    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>OS</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td title="${esc(run.rotulo || run.tipo)}">${esc(abreviar(run.rotulo || run.tipo))}</td><td>${esc(osTexto(run))}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}${run.esperando_permissao ? ' · esperando permissão' : ''}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
+    room.innerHTML = `<div class="panel-table" role="region" aria-label="Painel de execuções"><table><thead><tr><th>Agente</th><th>OS</th><th>Projeto</th><th>Estado</th><th>Atualização</th></tr></thead><tbody>${(dashboard.historico || []).map((run) => `<tr data-session="${esc(run.session_id)}" tabindex="0"><td title="${esc(run.rotulo || window.Assistentes.rotulo(run.tipo))}">${esc(abreviar(run.rotulo || window.Assistentes.rotulo(run.tipo)))}</td><td>${esc(osTexto(run))}</td><td>${esc(run.projeto_nome || run.cwd || 'Sem projeto')}</td><td>${esc(states[run.estado] || run.estado)}${run.esperando_permissao ? ' · esperando permissão' : ''}</td><td>${esc(new Date(run.atualizado_em).toLocaleString('pt-BR'))}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma execução no período.</td></tr>'}</tbody></table></div>`;
     return;
   }
   const data = officeData();
   if (!data.salas.length) {
     if (window.EscritorioPixel?.montado()) window.EscritorioPixel.destruir();
-    room.innerHTML = '<p class="empty room-empty">Nenhuma sessão recebida. Configure os hooks ou inicie a demonstração.</p>';
+    room.innerHTML = '<p class="empty room-empty">Nenhum chat recebido. Configure os hooks ou inicie a demonstração.</p>';
     return;
   }
   if (window.EscritorioPixel?.montado()) window.EscritorioPixel.atualizar(data);
@@ -102,7 +102,7 @@ async function selectSession(sessionId) {
   renderRoom();
   const [agents, history] = await Promise.all([request('GET', `/sessoes/${encodeURIComponent(sessionId)}/agentes`), request('GET', `/sessoes/${encodeURIComponent(sessionId)}/historico`)]);
   const main = agents.agentes.find((agent) => !agent.pai_chave);
-  $('#details').innerHTML = `<h2>${esc(dashboard.execucoes.find((run) => run.session_id === sessionId && !run.pai_chave)?.rotulo || main?.tipo || 'Sessão')}</h2><p class="status">${esc(states[main?.estado] || '')}</p><p class="detail-path">${esc(main?.cwd || '')}</p><h3>Agentes</h3><ul class="agent-list">${agents.agentes.map((agent) => `<li><span>${esc(agent.tipo)}</span><small>${esc(states[agent.estado])}</small></li>`).join('') || '<li>Nenhum agente registrado.</li>'}</ul><h3>Histórico</h3><ol class="history">${history.eventos.map((event) => `<li><span>${esc(event.nome)}</span><time>${esc(new Date(event.ocorrido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}</time></li>`).join('') || '<li>Sem eventos.</li>'}</ol>`;
+  $('#details').innerHTML = `<h2>${esc(dashboard.execucoes.find((run) => run.session_id === sessionId && !run.pai_chave)?.rotulo || (main && window.Assistentes.rotulo(main.tipo)) || 'Chat')}</h2><p class="status">${esc(states[main?.estado] || '')}</p><p class="detail-path">${esc(main?.cwd || '')}</p><h3>Agentes</h3><ul class="agent-list">${agents.agentes.map((agent) => `<li><span>${esc(window.Assistentes.rotulo(agent.tipo))}</span><small>${esc(states[agent.estado])}</small></li>`).join('') || '<li>Nenhum agente registrado.</li>'}</ul><h3>Histórico</h3><ol class="history">${history.eventos.map((event) => `<li><span>${esc(event.nome)}</span><time>${esc(new Date(event.ocorrido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}</time></li>`).join('') || '<li>Sem eventos.</li>'}</ol>`;
   $('#details-modal').innerHTML = $('#details').innerHTML;
   $('#details-dialog').showModal();
 }

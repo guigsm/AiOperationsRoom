@@ -11,6 +11,7 @@ REGISTRO_ENV = "INTOCA_SALA_JSON"
 PORT_ENV = "AI_OPERATIONS_ROOM_PORT"
 PADRAO = 8765
 VERSAO = "0.2.0"
+CHAVES_PROPRIAS = ("porta", "pid", "iniciou_em", "versao")
 
 
 def registro_path() -> Path:
@@ -49,11 +50,13 @@ def _gravar(path: Path, dados: dict) -> None:
 
 
 def registrar(porta: int) -> None:
-    """Grava animada={porta,pid,iniciou_em,versao}; preserva o resto do arquivo. Nunca derruba a sala."""
+    """Mescla porta, pid, iniciou_em e versao na chave `animada`; preserva o resto da chave e do arquivo. Nunca derruba a sala."""
     try:
         path = registro_path()
         dados = _ler(path)
+        atual = dados.get("animada")
         dados["animada"] = {
+            **(atual if isinstance(atual, dict) else {}),
             "porta": porta,
             "pid": os.getpid(),
             "iniciou_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -71,7 +74,11 @@ def remover() -> None:
         dados = _ler(path)
         atual = dados.get("animada")
         if isinstance(atual, dict) and atual.get("pid") == os.getpid():
-            dados.pop("animada")
+            sobra = {k: v for k, v in atual.items() if k not in CHAVES_PROPRIAS}
+            if sobra:
+                dados["animada"] = sobra  # o que outros gravaram na chave fica
+            else:
+                dados.pop("animada")
             _gravar(path, dados)
     except OSError:
         pass

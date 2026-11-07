@@ -48,7 +48,7 @@
   /* ---------------------------------------------------------- pessoas */
 
   // O contorno · S/s pele · R/r cabelo · E olho · T/t camisa · P calça ·
-  // B sapato · H/h fone (só o Claude principal)
+  // B sapato · H/h fone (só o chat principal)
   const CABECAS = {
     frente: {
       curto: [
@@ -187,7 +187,7 @@
   }
 
   /* A mesma execução tem sempre a mesma cara (a chave é a sessão + o id do
-     subagente); execuções diferentes do mesmo tipo são pessoas diferentes. */
+     assistente); execuções diferentes do mesmo tipo são pessoas diferentes. */
   function aparencia(e) {
     const h = hash(`${e.session_id || ''}|${e.agent_id || ''}|${e.id}`);
     const pega = (lista, n) => lista[Math.floor(h / n) % lista.length];
@@ -837,9 +837,11 @@
   const CENA = { largura: 1000, margem: 16, cabecalho: 34 };
   const VELOCIDADE = 26; // pixels de arte por segundo
   const PERMANENCIA = { mesa: [24000, 55000], cafe: [9000, 20000], estar: [14000, 36000] };
+  const ESCALA_LEITURA = 0.8;
   const PLACA_MAX = 99; // unidades: duas placas vizinhas nunca se encostam
-  const ROTULOS = { principal: 'Claude principal', desconhecido: 'agente desconhecido' };
-  const rotulo = (tipo, e) => (e && e.rotulo) || ROTULOS[tipo] || tipo || '?'; // e.rotulo: cargo/OS do título do chat
+  // Rótulo e família vêm do dicionário único dos assistentes (assistentes.js); e.rotulo: cargo/OS/título do chat.
+  const Assist = raiz.Assistentes || (typeof require === 'function' ? require('./assistentes.js') : null);
+  const rotulo = (tipo, e) => (e && e.rotulo) || Assist.rotulo(tipo);
   // Cargo abreviado na placa; o rótulo completo vai no tooltip. Sem cargo reconhecido, fica como está.
   const CARGOS_ABREV = { gerente: 'Ger.', executor: 'Exe.', diretoria: 'Dir.', secretaria: 'Sec.', 'plantão': 'Pla.', plantao: 'Pla.', assistente: 'Ass.' };
   function abreviarRotulo(texto) {
@@ -851,13 +853,8 @@
   const esc = (v) =>
     String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const reduzido = () => raiz.matchMedia && raiz.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const FAMILIAS = [
-    ['principal', /^principal$/i], ['pesquisa', /^(explore|pesquisador|general-purpose|claude-code-guide)/i],
-    ['plano', /^plan$/i], ['revisao', /^(revisor|code-review|simplify)/i],
-    ['qa', /^(verificador|diagnostico|security)/i], ['dados', /^analista/i],
-    ['conhecimento', /^(curador|radar|entrega)/i],
-  ];
-  const familiaDe = (tipo) => (FAMILIAS.find(([, pattern]) => pattern.test(String(tipo || ''))) || ['outro'])[0];
+  const familiaDe = (tipo) => Assist.familia(tipo);
+  Object.assign(logica, { rotulo, familiaDe, ESCALA_LEITURA });
   const GLIFOS = {
     principal: '<path class="glifo cheio" d="M0 -4.2 L1.3 -1.3 L4.2 0 L1.3 1.3 L0 4.2 L-1.3 1.3 L-4.2 0 L-1.3 -1.3 Z"/>',
     pesquisa: '<circle class="glifo" cx="-1.2" cy="-1.2" r="2.7"/><path class="glifo" d="M0.8 0.8 L4 4"/>',
@@ -867,7 +864,7 @@
     dados: '<path class="glifo" d="M-3.5 4 V0 M0 4 V-4 M3.5 4 V-1.5"/>',
     conhecimento: '<path class="glifo" d="M-4 -3.5 H-0.3 V3.8 H-4 Z M0.3 -3.5 H4 V3.8 H0.3 Z"/>',
   };
-  const glifoDe = (tipo) => GLIFOS[familiaDe(tipo)] || `<text class="glifo-letra" y="3.4" text-anchor="middle">${esc(tipo === 'principal' ? 'C' : String(tipo || '?').slice(0, 1).toUpperCase())}</text>`;
+  const glifoDe = (tipo) => GLIFOS[familiaDe(tipo)] || `<text class="glifo-letra" y="3.4" text-anchor="middle">${esc('A')}</text>`;
 
   function svgEl(nome, atributos, classe) {
     const el = document.createElementNS(NS, nome);
@@ -1271,8 +1268,9 @@
     }, `personagem avatar pessoa ${e.status} familia-${familia} surgindo${e.esperando_permissao ? ' esperando-permissao' : ''}`);
     el.appendChild(svgEl('rect', { x: -15, y: -3, width: 30, height: 4 }, 'pp-sombra'));
     const virar = svgEl('g', {}, 'virar');
-    const q0 = svgEl('use', { x: -SW * P / 2, y: -SH * P, width: SW * P, height: SH * P }, 'pp-q0');
-    const q1 = svgEl('use', { x: -SW * P / 2, y: -SH * P, width: SW * P, height: SH * P }, 'pp-q1');
+    const pq = Assist.leitura(e.tipo_agente) ? ESCALA_LEITURA : 1; // assistente de leitura: boneco pequeno, pés no mesmo chão
+    const q0 = svgEl('use', { x: -SW * P * pq / 2, y: -SH * P * pq, width: SW * P * pq, height: SH * P * pq }, 'pp-q0');
+    const q1 = svgEl('use', { x: -SW * P * pq / 2, y: -SH * P * pq, width: SW * P * pq, height: SH * P * pq }, 'pp-q1');
     virar.appendChild(q0);
     virar.appendChild(q1);
     el.appendChild(virar);

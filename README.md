@@ -10,13 +10,16 @@
 Mudanças pequenas e separáveis sobre o original, para a sala conviver com a InToca Sala (a versão simples, "Clássica"):
 
 - **Porta escolhida por você:** `serve --port N` ou a variável `AI_OPERATIONS_ROOM_PORT` (a flag vence a variável; padrão 8765).
-- **Registro da sala em `~/.intoca/sala.json`:** ao subir, grava `animada: {porta, pid, iniciou_em, versao}` sem apagar o resto do arquivo
+- **Registro da sala em `~/.intoca/sala.json`:** ao subir, mescla `porta, pid, iniciou_em, versao` na chave `animada` sem apagar o resto da chave nem do arquivo
   (gravação atômica) e remove a própria entrada ao encerrar normalmente (Ctrl+C). Sala encerrada à força deixa a entrada; quem lê confere
   o `pid` e `/api/health`.
 - **Saúde por HTTP:** `GET /api/health` devolve `{ok, versao, pronta}`. A porta abre primeiro; `pronta` vira `true` depois do banco aberto
   e da primeira leitura da fila de eventos, que roda em segundo plano para uma fila grande não atrasar a abertura da porta.
 - **Botão "Clássica"** no cabeçalho, que abre a InToca Sala na porta registrada em `sala.json`. Sem Clássica registrada, o botão não aparece.
 - **Nome na tela:** "AI Operations Room · InToca".
+- **Fonte única (INT-07):** com a InToca Sala (Clássica) no ar, a Animada consome `/api/tocas` e `/api/pendencias` dela em vez de ler manifesto e filas por conta própria; sem ela, mantém a leitura de antes como reserva (`backend/fonte.py`). Só HTTP em loopback, sem código compartilhado.
+- **Faxina não vira boneco:** o fim de assistente (`SubagentStop`) sem início anterior e sem tipo é a faxina interna do Claude Code depois de cada resposta; não cria personagem, e os que já estão no banco deixam de aparecer na leitura, sem apagar dado.
+- **Vocabulário na placa:** `Assistente · revisor`, `Explorador` etc. vêm de um dicionário único (`frontend/assistentes.js`); chat sem título mostra o título do chat ou `Chat sem título · <pastas>`.
 - Sala de escritório ligada a um manifesto de projetos opcional (`INTOCA_SEDE`), fila de pendências do proprietário e comunicação por
   agente.
 
@@ -102,7 +105,7 @@ uv run python -m backend.cli hooks-remove
 
 `hooks-remove` remove somente entradas cujo comando aponta para `hooks/capture.py` deste checkout, mesmo se o executável Python tiver mudado. Ele preserva os demais hooks e configurações.
 
-No Windows, `hooks-install` registra PowerShell explicitamente e também corrige um hook antigo deste checkout que tenha sido criado sem o campo `shell`.
+O comando registrado é o interpretador base direto, isolado e sem `site` (`"<python>" -I -S "<checkout>/hooks/capture.py"`), sem PowerShell e sem o lançador do venv: a partida rápida mantém o hook de `SessionEnd` abaixo de 1 s (antes o Claude Code o cancelava, "Hook cancelled"). `hooks-install` também migra a entrada antiga deste checkout (PowerShell, com o campo `shell`) para o comando novo. O hook só usa a biblioteca padrão e só grava uma linha em `events.jsonl`.
 
 O hook registra identificadores, tipo de agente, diretório de trabalho, razão de encerramento e a hora do evento. Ele não salva prompts, respostas nem transcrições. Para detectar sessões interrompidas sem hook de encerramento, o servidor consulta o identificador da sessão e o PID em `~/.claude/sessions`; não copia o conteúdo desses arquivos para o banco. Os dados ficam por padrão em `~/.ai-operations-room`; defina `AI_OPERATIONS_ROOM_DATA_DIR` para usar outra pasta.
 

@@ -11,6 +11,16 @@ ACTIVE = {"trabalhando", "delegando", "aguardando"}
 IDLE = "ocioso"  # processo do chat sumiu sem SessionEnd e o último evento é recente
 
 
+# INT-07: depois de cada resposta o Claude Code faz uma faxina interna (título, memória, sugestões) que chega como
+# SubagentStop sem SubagentStart e sem agent_type. Não é alguém contratado, então não vira boneco. O filtro vale na criação
+# (apply) e na leitura (FAXINA_SQL, para o que já está no banco); events.jsonl e o banco nunca são reescritos.
+FAXINA_SQL = (
+    "(execucao.pai_chave IS NOT NULL AND execucao.tipo = 'subagente' AND NOT EXISTS ("
+    "SELECT 1 FROM evento s WHERE s.session_id = execucao.session_id AND s.nome = 'SubagentStart' "
+    "AND json_extract(s.dados, '$.agent_id') = execucao.agent_id))"
+)
+
+
 def key_for(event: dict) -> str:
     agent_id = event.get("agent_id")
     if isinstance(agent_id, str) and agent_id:
@@ -86,6 +96,10 @@ def apply(con: sqlite3.Connection, event: dict) -> None:
         _set_main(con, event, "delegando")
         _upsert(con, event, state="trabalhando", parent=main_key(event["session_id"]))
     elif name == "SubagentStop":
+        if not _value(event, "agent_type") and (not _value(event, "agent_id") or not con.execute(
+            "SELECT 1 FROM execucao WHERE chave = ?", (key_for(event),)
+        ).fetchone()):
+            return  # faxina interna: fim sem início anterior e sem tipo
         if not con.execute("SELECT 1 FROM execucao WHERE chave = ?", (main_key(event["session_id"]),)).fetchone():
             _set_main(con, event, "aguardando")
         _upsert(con, event, state="concluida", parent=main_key(event["session_id"]), ended_by="SubagentStop")

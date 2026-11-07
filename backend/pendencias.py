@@ -200,11 +200,35 @@ def os_da_sala(filas: dict[str, dict], sala_id: str | None, os_id: str | None) -
     return filas.get(sala_id, {}).get("os", {}).get(os_id.upper())
 
 
-def pendencias(manifesto: dict | None, filas: dict[str, dict], titulos_de_executor: set[str]) -> dict:
-    """Pendências abertas por tipo e por projeto. Linha `cartao` some se já nasceu o executor da OS citada."""
+def _linhas_da_api(manifesto: dict | None, externas: list[dict]) -> dict[str, list[dict]]:
+    """Linhas de `/api/pendencias` da Clássica por id de sala (origem `sede` é a sala `sede`; as demais, pelo nome)."""
+    por_nome = {sala["nome"].casefold(): sala["id"] for sala in (manifesto or {}).get("salas", [])}
+    saida: dict[str, list[dict]] = {}
+    for linha in externas:
+        origem = str(linha.get("origem") or "")
+        sala_id = "sede" if origem == "sede" else por_nome.get(origem.casefold())
+        if sala_id is None:
+            continue
+        tipo = sem_acento(str(linha.get("tipo") or "")).strip()
+        numero = str(linha.get("numero") or "").strip()
+        saida.setdefault(sala_id, []).append({
+            "numero": int(numero) if numero.isdigit() else (numero or None),
+            "tipo": tipo if tipo in TIPOS else "outro", "pedido": str(linha.get("pedido") or ""),
+            "onde": str(linha.get("onde") or ""), "desde": str(linha.get("desde") or ""), "estado": "aberto",
+        })
+    return saida
+
+
+def pendencias(manifesto: dict | None, filas: dict[str, dict], titulos_de_executor: set[str],
+               externas: list[dict] | None = None) -> dict:
+    """Pendências abertas por tipo e por projeto. Linha `cartao` some se já nasceu o executor da OS citada.
+
+    `externas`: linhas já lidas pela InToca Sala (INT-07); com elas, as filas locais não são consultadas para as pendências.
+    """
     itens = []
+    da_api = _linhas_da_api(manifesto, externas) if externas is not None else None
     for sala in (manifesto or {}).get("salas", []):
-        for linha in filas.get(sala["id"], {}).get("esperando", []):
+        for linha in (da_api.get(sala["id"], []) if da_api is not None else filas.get(sala["id"], {}).get("esperando", [])):
             if linha["tipo"] == "cartao" and {m.upper() for m in ID_NO_TEXTO.findall(linha["pedido"])} & titulos_de_executor:
                 continue
             itens.append({"projeto": sala["nome"], "projeto_id": sala["id"], **linha})

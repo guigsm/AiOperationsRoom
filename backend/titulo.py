@@ -40,3 +40,26 @@ def parse(title: str | None, siglas: dict[str, str] | None = None) -> dict:
         return {"cargo": cargo, "projeto": projeto, "os_id": os_id, "rotulo": f"{cargo} · {os_id}"}
     projeto = parts[-1]
     return {"cargo": cargo, "projeto": projeto, "os_id": None, "rotulo": f"{cargo} · {projeto}"}
+
+
+ROTULO_MAX = 44
+
+
+def nome_do_chat(title: str | None, cwd: str | None) -> str:
+    """Rótulo de um chat cujo título não segue `Cargo · Projeto` (INT-07).
+
+    O título do chat, se houver; senão `Chat sem título · <últimas duas pastas do cwd>`.
+    """
+    texto = " ".join(repair(title).split()) if isinstance(title, str) else ""
+    if texto:
+        return texto if len(texto) <= ROTULO_MAX else texto[: ROTULO_MAX - 1].rstrip() + "…"
+    partes = [parte for parte in re.split(r"[\\/]+", cwd or "") if parte and not re.fullmatch(r"[A-Za-z]:", parte)]
+    return "Chat sem título · " + "/".join(partes[-2:]) if partes else "Chat sem título"
+
+
+def parse_chat(title: str | None, cwd: str | None, siglas: dict[str, str] | None = None) -> dict:
+    """`parse` com o rótulo preenchido para o chat fora do padrão."""
+    dados = parse(title, siglas)
+    if dados["rotulo"] is None:
+        dados["rotulo"] = nome_do_chat(title, cwd)
+    return dados

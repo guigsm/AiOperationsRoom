@@ -89,7 +89,17 @@ def parse(data: dict, root: Path) -> dict | None:
 
 
 def load() -> dict | None:
-    """The manifest of this machine (see load_from)."""
+    """Rooms of this machine: from the InToca Sala (Classica) API when it is up (INT-07), else the manifest (see load_from)."""
+    from backend import fonte
+
+    if fonte.classica_porta() is not None:
+        proprio = load_from()  # sede e siglas: a API diz quais sao as Tocas, nao onde fica a sede nem as siglas de OS
+        located = find()
+        siglas = {room["nome"]: room["sigla"] for room in (proprio or {}).get("salas", []) if room.get("sigla")}
+        vindo = fonte.tocas(str(located[0].parent) if located else None, siglas)
+        if vindo:
+            return vindo
+        return proprio
     return load_from()
 
 

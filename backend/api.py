@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+from backend import fonte
 from backend import registro
 from backend.config import FRONTEND
 from backend.db import connect, init_db
@@ -218,7 +219,7 @@ def list_sessions(con: sqlite3.Connection = Depends(database)) -> dict:
     sessions = []
     for row in rows:
         session = dict(row)
-        session.update({key: value for key, value in titulos.parse(session["titulo"], siglas).items() if key != "projeto"})
+        session.update({key: value for key, value in titulos.parse_chat(session["titulo"], session["cwd"], siglas).items() if key != "projeto"})
         match = resolve(session["cwd"])
         session["projeto_id"] = match["id"] if match else None
         session["projeto_nome"] = match["nome"] if match else None
@@ -262,9 +263,9 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
     window = (now - timedelta(hours=horas)).isoformat(timespec="seconds")
     visible = (now - timedelta(hours=convivencia)).isoformat(timespec="seconds")
     rows = con.execute(
-        "SELECT * FROM execucao WHERE estado IN ('trabalhando', 'delegando', 'aguardando', 'ocioso') "
-        "OR julianday(criado_em) >= julianday(?) OR julianday(atualizado_em) >= julianday(?) "
-        "ORDER BY atualizado_em DESC", (window, visible)
+        "SELECT * FROM execucao WHERE (estado IN ('trabalhando', 'delegando', 'aguardando', 'ocioso') "
+        "OR julianday(criado_em) >= julianday(?) OR julianday(atualizado_em) >= julianday(?)) "
+        f"AND NOT {runs.FAXINA_SQL} ORDER BY atualizado_em DESC", (window, visible)
     ).fetchall()
     contexto = _contexto_os(con, found)
     items = []
@@ -274,14 +275,14 @@ def dashboard(horas: int = Query(6, ge=1, le=24),
         # Only the main chat carries the title; subagents keep the type the room already shows.
         if item["pai_chave"] is None:
             item["titulo"] = chat_titles.get(item["session_id"], "")
-            item.update(titulos.parse(item["titulo"], siglas))
+            item.update(titulos.parse_chat(item["titulo"], item.get("cwd"), siglas))
         _anotar(item, contexto, match)
         items.append(item)
     active = runs.ACTIVE
     summary_items = [item for item in items if item["estado"] in active or
                      _in_window(item["criado_em"], window) or _in_window(item["atualizado_em"], window)]
     principals_with_children = {row["pai_chave"] for row in con.execute(
-        "SELECT DISTINCT pai_chave FROM execucao WHERE pai_chave IS NOT NULL"
+        f"SELECT DISTINCT pai_chave FROM execucao WHERE pai_chave IS NOT NULL AND NOT {runs.FAXINA_SQL}"
     )}
     room_items = [item for item in items if item["estado"] in active or item["estado"] == runs.IDLE or
                   (convivencia and _in_window(item["atualizado_em"], visible) and
@@ -342,12 +343,15 @@ def pending(con: sqlite3.Connection = Depends(database)) -> dict:
         match = resolve(row["cwd"])
         item = runs.public(row, match)
         item["titulo"] = titles.get(row["session_id"], "")
-        item.update(titulos.parse(item["titulo"], siglas))
+        item.update(titulos.parse_chat(item["titulo"], item.get("cwd"), siglas))
         _anotar(item, contexto, match)
         agents.append({"sessao": item["session_id"], "personagem": item["rotulo"], "projeto": item["projeto_nome"],
                        "projeto_id": item["projeto_id"], "os_id": item["os_id"], "os_estado": item["os_estado"], "os_situacao": item["os_situacao"],
                        "estado": item["estado"], "esperando_permissao": item["esperando_permissao"]})
-    return {"pendencias": filas_mod.pendencias(found, contexto["filas"], contexto["executores"]),
+    # Com a Clássica no ar, as pendências vêm da API dela (INT-07); sem ela, da leitura própria das filas.
+    externas = fonte.pendencias() if found and found.get("origem") == "classica" else None
+    return {"pendencias": filas_mod.pendencias(found, contexto["filas"], contexto["executores"], externas),
+            "fonte": "classica" if externas is not None else "propria",
             "agentes": agents, "lido_em": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 
 
@@ -365,7 +369,8 @@ def session_history(session_id: str, con: sqlite3.Connection = Depends(database)
 def session_agents(session_id: str, con: sqlite3.Connection = Depends(database)) -> dict:
     ingest(con)
     rows = con.execute(
-        "SELECT * FROM execucao WHERE session_id = ? ORDER BY pai_chave, criado_em", (session_id,)
+        f"SELECT * FROM execucao WHERE session_id = ? AND NOT {runs.FAXINA_SQL} ORDER BY pai_chave, criado_em",
+        (session_id,)
     ).fetchall()
     return {"agentes": [dict(row) for row in rows]}
 

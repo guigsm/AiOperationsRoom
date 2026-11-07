@@ -145,15 +145,15 @@ def test_queue_rotation_with_larger_replacement(monkeypatch, tmp_path):
 
 
 def test_hook_settings_bom_and_changed_python(tmp_path):
-    if os.name == "nt":
-        assert command().startswith("& ")
+    # INT-07: interpretador direto, isolado e sem site; sem PowerShell (a partida rápida mantém o SessionEnd abaixo de 1 s)
+    assert " -I -S " in command() and not command().startswith("&")
     settings = tmp_path / "settings.json"
     settings.write_text('{"theme":"dark"}', encoding="utf-8-sig")
     install_hooks(settings)
     assert settings.read_bytes().startswith(b"\xef\xbb\xbf")
     data = json.loads(settings.read_text(encoding="utf-8-sig"))
     hook = data["hooks"]["Stop"][0]["hooks"][0]
-    assert hook.get("shell") == ("powershell" if os.name == "nt" else None)
+    assert "shell" not in hook
     hook["command"] = hook["command"].replace(command().split('"')[1], "C:/other/python.exe")
     settings.write_text(json.dumps(data), encoding="utf-8-sig")
     remove_hooks(settings)
@@ -189,7 +189,22 @@ def test_install_repairs_existing_hook_without_shell(tmp_path):
     install_hooks(settings)
     hooks = json.loads(settings.read_text(encoding="utf-8"))["hooks"]["Stop"]
     assert len(hooks) == 1
-    assert hooks[0]["hooks"][0].get("shell") == ("powershell" if os.name == "nt" else None)
+    assert "shell" not in hooks[0]["hooks"][0]
+
+
+def test_install_migrates_old_powershell_entry(tmp_path):
+    """Entrada gravada antes da INT-07 (`& "venv\\python" "capture.py"`, shell powershell) vira o comando novo, sem duplicar."""
+    from backend.cli import ROOT
+    antigo = f'& "C:/old/python.exe" "{ROOT / "hooks" / "capture.py"}"'
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"hooks": {"SessionEnd": [{"hooks": [
+        {"type": "command", "command": antigo, "timeout": 5, "shell": "powershell"}]}]}}), encoding="utf-8")
+    install_hooks(settings)
+    grupos = json.loads(settings.read_text(encoding="utf-8"))["hooks"]["SessionEnd"]
+    assert len(grupos) == 1
+    assert grupos[0]["hooks"][0]["command"] == command() and "shell" not in grupos[0]["hooks"][0]
+    remove_hooks(settings)
+    assert json.loads(settings.read_text(encoding="utf-8")) == {}
 
 
 def test_demo_stays_active_and_reseeding_refreshes_timestamps(monkeypatch, tmp_path):

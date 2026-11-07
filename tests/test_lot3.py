@@ -167,7 +167,7 @@ def test_old_database_gets_title_column(tmp_path, monkeypatch):
 def test_title_absent_keeps_current_name(client):
     write_events(event("b", "SessionStart", "C:\\y", 1))
     run = runs_of(client)["b"]
-    assert run["rotulo"] is None and run["tipo"] == "principal"
+    assert run["rotulo"] == "Chat sem título · y" and run["tipo"] == "principal"  # INT-07: sem título, pasta no lugar de "Claude principal"
 
 
 def test_api_with_manifest_closes_manual_registration(client, monkeypatch, tmp_path):
