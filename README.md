@@ -15,7 +15,7 @@ Mudanças pequenas e separáveis sobre o original, para a sala conviver com a In
   o `pid` e `/api/health`.
 - **Saúde por HTTP:** `GET /api/health` devolve `{ok, versao, pronta}`. A porta abre primeiro; `pronta` vira `true` depois do banco aberto
   e da primeira leitura da fila de eventos, que roda em segundo plano para uma fila grande não atrasar a abertura da porta.
-- **Botão "Clássica"** no cabeçalho, que abre a InToca Sala na porta registrada em `sala.json`. Sem Clássica registrada, o botão não aparece.
+- **Botão "Clássica"** no cabeçalho, que abre a InToca Sala na porta registrada em `sala.json`. Sem Clássica registrada, o botão não aparece. O mesmo link também aparece no menu lateral das três páginas (último item) e é só visita: não muda o padrão do navegador.
 - **Nome na tela:** "AI Operations Room · InToca".
 - **Fonte única (INT-07):** com a InToca Sala (Clássica) no ar, a Animada consome `/api/tocas` e `/api/pendencias` dela em vez de ler manifesto e filas por conta própria; sem ela, mantém a leitura de antes como reserva (`backend/fonte.py`). Só HTTP em loopback, sem código compartilhado.
 - **Faxina não vira boneco:** o fim de assistente (`SubagentStop`) sem início anterior e sem tipo é a faxina interna do Claude Code depois de cada resposta; não cria personagem, e os que já estão no banco deixam de aparecer na leitura, sem apagar dado.
